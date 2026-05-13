@@ -59,3 +59,17 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.full_name} ({self.email})"
+
+
+class LoginAttemptLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField()
+    ip_address = models.GenericIPAddressField()
+    success = models.BooleanField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"{self.email} - {'SUCCESS' if self.success else 'FAILURE'} at {self.timestamp}"

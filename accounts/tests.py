@@ -544,3 +544,46 @@ class PermissionClassesTests(TestCase):
             IsAdminOrSeniorOfficer,
         ]:
             self._check(cls, anon, False)
+
+
+class LoginAttemptLogModelTests(TestCase):
+    def setUp(self):
+        from .models import LoginAttemptLog
+
+        self.LoginAttemptLog = LoginAttemptLog
+        self.entry = LoginAttemptLog.objects.create(
+            email="test@example.com",
+            ip_address="192.168.1.1",
+            success=True,
+        )
+
+    def test_create_login_attempt_log(self):
+        self.assertEqual(self.entry.email, "test@example.com")
+        self.assertEqual(self.entry.ip_address, "192.168.1.1")
+        self.assertTrue(self.entry.success)
+
+    def test_log_failed_attempt(self):
+        entry = self.LoginAttemptLog.objects.create(
+            email="nonexistent@example.com",
+            ip_address="10.0.0.1",
+            success=False,
+        )
+        self.assertFalse(entry.success)
+
+    def test_log_str(self):
+        self.assertIn("SUCCESS", str(self.entry))
+        self.assertIn("test@example.com", str(self.entry))
+
+    def test_log_ordering(self):
+        from .models import LoginAttemptLog
+        from django.utils import timezone
+
+        older = LoginAttemptLog.objects.create(
+            email="older@example.com",
+            ip_address="1.1.1.1",
+            success=False,
+        )
+        older.timestamp = timezone.now() - timezone.timedelta(hours=1)
+        older.save(update_fields=["timestamp"])
+        latest = LoginAttemptLog.objects.first()
+        self.assertEqual(latest.email, "test@example.com")
