@@ -1,4 +1,6 @@
+import io
 import django.core.mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
@@ -963,3 +965,165 @@ class AdminDeactivateUserAPITests(TestCase):
             HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class VaultDocumentUploadAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/users/me/documents/"
+        self.password = "testpass123"
+        self.applicant = User.objects.create_user(
+            email="applicant@example.com",
+            full_name="Test Applicant",
+            phone="+251911111111",
+            password=self.password,
+            role=User.Role.APPLICANT,
+        )
+
+    def _auth_header(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "applicant@example.com", "password": self.password},
+            format="json",
+        )
+        return f"Bearer {response.data['access']}"
+
+    def _valid_jpeg(self):
+        img = io.BytesIO()
+        img.write(
+            b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f\x1a'9=82<.342\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x11\x04\x12!1A\x06\x13Qa\x07\"q\x142\x81\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18\x19\x1a%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85\x86\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xff\xdb\x00C\x01\x00\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xff\xd9"
+        )
+        img.seek(0)
+        return SimpleUploadedFile("test.jpg", img.getvalue(), content_type="image/jpeg")
+
+    def _valid_png(self):
+        return SimpleUploadedFile(
+            "test.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 100, content_type="image/png"
+        )
+
+    def _valid_pdf(self):
+        return SimpleUploadedFile(
+            "test.pdf",
+            b"%PDF-1.4 test pdf content",
+            content_type="application/pdf",
+        )
+
+    def test_upload_jpeg_success(self):
+        response = self.client.post(
+            self.url,
+            {"file": self._valid_jpeg(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("document_id", response.data)
+        self.assertIn("status", response.data)
+        self.assertIn("validation_result", response.data)
+        self.assertEqual(response.data["validation_result"], "valid")
+
+    def test_upload_png_success(self):
+        response = self.client.post(
+            self.url,
+            {"file": self._valid_png(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["validation_result"], "valid")
+
+    def test_upload_pdf_success(self):
+        response = self.client.post(
+            self.url,
+            {"file": self._valid_pdf(), "document_type": "TIN_CERTIFICATE"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["validation_result"], "valid")
+
+    def test_upload_unauthenticated(self):
+        response = self.client.post(
+            self.url,
+            {"file": self._valid_jpeg(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_upload_unauthorized_role(self):
+        officer = User.objects.create_user(
+            email="officer@example.com",
+            full_name="Officer",
+            phone="+251922222222",
+            password="pass123",
+            role=User.Role.REVIEW_OFFICER,
+        )
+        login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "officer@example.com", "password": "pass123"},
+            format="json",
+        )
+        response = self.client.post(
+            self.url,
+            {"file": self._valid_jpeg(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_upload_invalid_file_type(self):
+        response = self.client.post(
+            self.url,
+            {
+                "file": SimpleUploadedFile(
+                    "test.txt", b"text content", content_type="text/plain"
+                ),
+                "document_type": "NATIONAL_ID",
+            },
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_upload_file_too_large(self):
+        response = self.client.post(
+            self.url,
+            {
+                "file": SimpleUploadedFile(
+                    "large.jpg", b"x" * (5 * 1024 * 1024 + 1), content_type="image/jpeg"
+                ),
+                "document_type": "NATIONAL_ID",
+            },
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_upload_zero_byte_file(self):
+        response = self.client.post(
+            self.url,
+            {
+                "file": SimpleUploadedFile("empty.jpg", b"", content_type="image/jpeg"),
+                "document_type": "NATIONAL_ID",
+            },
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_upload_missing_document_type(self):
+        response = self.client.post(
+            self.url,
+            {"file": self._valid_jpeg()},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_upload_missing_file(self):
+        response = self.client.post(
+            self.url,
+            {"document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

@@ -93,7 +93,11 @@ class Document(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
-        Application, on_delete=models.CASCADE, related_name="documents"
+        Application,
+        on_delete=models.CASCADE,
+        related_name="documents",
+        null=True,
+        blank=True,
     )
     uploader = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="documents"
@@ -115,7 +119,8 @@ class Document(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.document_type} v{self.version_number} - {self.application.arn}"
+        ref = self.application.arn if self.application else self.uploader.email
+        return f"{self.document_type} v{self.version_number} - {ref}"
 
 
 class ApplicationHistory(models.Model):

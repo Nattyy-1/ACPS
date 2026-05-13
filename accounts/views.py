@@ -17,8 +17,9 @@ from .serializers import (
     UserProfileSerializer,
     AdminUserSerializer,
     CreateOfficerSerializer,
+    VaultDocumentSerializer,
 )
-from .permissions import IsAdmin
+from .permissions import IsAdmin, IsApplicant
 
 User = get_user_model()
 
@@ -191,3 +192,16 @@ class AdminDeactivateUserView(APIView):
             {"message": "User account deactivated", "user_id": str(user.id)},
             status=status.HTTP_200_OK,
         )
+
+
+class VaultDocumentUploadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+
+    def post(self, request):
+        serializer = VaultDocumentSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        doc = serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

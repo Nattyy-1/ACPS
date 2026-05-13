@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from applications.models import Document
 
 User = get_user_model()
 
@@ -152,3 +153,44 @@ class CreateOfficerSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         data["password"] = getattr(self, "_temp_password", "")
         return data
+
+
+class VaultDocumentSerializer(serializers.Serializer):
+    file = serializers.FileField()
+    document_type = serializers.ChoiceField(choices=["NATIONAL_ID", "TIN_CERTIFICATE"])
+
+    ALLOWED_MIME_TYPES = {
+        "image/jpeg",
+        "image/png",
+        "application/pdf",
+    }
+
+    def validate_file(self, value):
+        if value.size == 0:
+            raise serializers.ValidationError("File cannot be empty.")
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("File size must not exceed 5MB.")
+        if value.content_type not in self.ALLOWED_MIME_TYPES:
+            raise serializers.ValidationError("File must be JPEG, PNG, or PDF.")
+        return value
+
+    def create(self, validated_data):
+        file = validated_data["file"]
+        user = self.context["request"].user
+        doc = Document.objects.create(
+            application=None,
+            uploader=user,
+            document_type=validated_data["document_type"],
+            file_path=file,
+            file_name=file.name,
+            file_size_bytes=file.size,
+            mime_type=file.content_type,
+        )
+        return doc
+
+    def to_representation(self, instance):
+        return {
+            "document_id": str(instance.id),
+            "status": instance.validation_status,
+            "validation_result": "valid",
+        }

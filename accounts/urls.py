@@ -7,6 +7,7 @@ from .views import (
     ForgotPasswordView,
     ResetPasswordView,
     CurrentUserView,
+    VaultDocumentUploadView,
     AdminUserDetailView,
     AdminUserListView,
     AdminDeactivateUserView,
@@ -24,6 +25,11 @@ urlpatterns = [
     ),
     path(
         "auth/reset-password/", ResetPasswordView.as_view(), name="auth-reset-password"
+    ),
+    path(
+        "users/me/documents/",
+        VaultDocumentUploadView.as_view(),
+        name="vault-document-upload",
     ),
     path("users/me/", CurrentUserView.as_view(), name="users-me"),
     path("users/", AdminUserListView.as_view(), name="admin-user-list"),
