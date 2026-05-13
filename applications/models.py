@@ -217,6 +217,7 @@ class Document(models.Model):
         FIRE_SAFETY = "FIRE_SAFETY", "Fire Safety Plans"
         NATIONAL_ID = "NATIONAL_ID", "National ID/Passport"
         TIN_CERTIFICATE = "TIN_CERTIFICATE", "TIN Certificate"
+        RECEIPT = "RECEIPT", "Payment Receipt"
 
     class ValidationStatus(models.TextChoices):
         PENDING = "PENDING", "Pending Review"
