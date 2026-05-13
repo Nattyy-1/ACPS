@@ -1180,3 +1180,49 @@ class VaultDocumentUploadAPITests(TestCase):
         self.assertTrue(tin.is_current)
         self.assertEqual(nat.version_number, 1)
         self.assertEqual(tin.version_number, 1)
+
+    def test_list_documents_returns_uploaded_docs(self):
+        self.client.post(
+            self.url,
+            {"file": self._valid_jpeg(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.client.post(
+            self.url,
+            {"file": self._valid_pdf(), "document_type": "TIN_CERTIFICATE"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        response = self.client.get(self.url, HTTP_AUTHORIZATION=self._auth_header())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("documents", response.data)
+        self.assertEqual(len(response.data["documents"]), 2)
+
+    def test_list_documents_empty_vault(self):
+        response = self.client.get(self.url, HTTP_AUTHORIZATION=self._auth_header())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["documents"], [])
+
+    def test_list_documents_unauthenticated(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_list_documents_unauthorized_role(self):
+        officer = User.objects.create_user(
+            email="officer@example.com",
+            full_name="Officer",
+            phone="+251922222222",
+            password="pass123",
+            role=User.Role.REVIEW_OFFICER,
+        )
+        login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "officer@example.com", "password": "pass123"},
+            format="json",
+        )
+        response = self.client.get(
+            self.url,
+            HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

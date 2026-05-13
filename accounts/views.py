@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenBlacklistView
+from applications.models import Document
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
@@ -197,6 +198,24 @@ class AdminDeactivateUserView(APIView):
 class VaultDocumentUploadView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsApplicant]
+
+    def get(self, request):
+        docs = Document.objects.filter(
+            uploader=request.user, application__isnull=True
+        ).order_by("-created_at")
+        data = [
+            {
+                "document_id": str(d.id),
+                "document_type": d.document_type,
+                "file_name": d.file_name,
+                "status": d.validation_status,
+                "rejection_reason": d.rejection_reason,
+                "version_number": d.version_number,
+                "uploaded_at": d.created_at.isoformat(),
+            }
+            for d in docs
+        ]
+        return Response({"documents": data})
 
     def post(self, request):
         serializer = VaultDocumentSerializer(
