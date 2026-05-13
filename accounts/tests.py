@@ -1,6 +1,8 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from rest_framework import status
+from rest_framework.test import APIClient
 
 User = get_user_model()
 
@@ -57,3 +59,55 @@ class UserModelTests(TestCase):
                 role=role,
             )
             self.assertEqual(user.role, role)
+
+
+class RegisterAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/auth/register/"
+        self.valid_payload = {
+            "email": "newuser@example.com",
+            "full_name": "New User",
+            "phone": "+251911111111",
+            "password": "strongpass123",
+        }
+
+    def test_register_success(self):
+        response = self.client.post(self.url, self.valid_payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("message", response.data)
+        self.assertIn("user_id", response.data)
+        self.assertEqual(response.data["message"], "Account created")
+        self.assertTrue(User.objects.filter(email="newuser@example.com").exists())
+
+    def test_register_duplicate_email(self):
+        User.objects.create_user(
+            email="newuser@example.com",
+            full_name="Existing",
+            phone="+251922222222",
+            password="pass123",
+        )
+        response = self.client.post(self.url, self.valid_payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", response.data)
+
+    def test_register_missing_fields(self):
+        response = self.client.post(self.url, {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", response.data)
+        self.assertIn("full_name", response.data)
+        self.assertIn("phone", response.data)
+        self.assertIn("password", response.data)
+
+    def test_register_short_password(self):
+        payload = {**self.valid_payload, "password": "short"}
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)
+
+    def test_register_creates_applicant_role(self):
+        response = self.client.post(self.url, self.valid_payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(email="newuser@example.com")
+        self.assertEqual(user.role, User.Role.APPLICANT)
+        self.assertTrue(user.is_active)
