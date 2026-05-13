@@ -4,7 +4,9 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Count
+from django.utils import timezone
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -181,7 +183,11 @@ class ReviewWorkspaceView(APIView):
 
 class CommentView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsReviewOfficer]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [IsReviewOfficer()]
 
     def post(self, request, application_id):
         try:
@@ -305,7 +311,7 @@ class CommentResolveView(APIView):
             )
         comment.resolution_status = resolution
         comment.resolved_by = request.user
-        comment.resolved_at = datetime.datetime.now()
+        comment.resolved_at = timezone.now()
         comment.save()
         return Response(ReviewCommentSerializer(comment).data)
 
