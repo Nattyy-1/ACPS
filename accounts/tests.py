@@ -111,3 +111,68 @@ class RegisterAPITests(TestCase):
         user = User.objects.get(email="newuser@example.com")
         self.assertEqual(user.role, User.Role.APPLICANT)
         self.assertTrue(user.is_active)
+
+
+class LoginAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/auth/login/"
+        self.password = "testpass123"
+        self.user = User.objects.create_user(
+            email="login@example.com",
+            full_name="Login User",
+            phone="+251911111111",
+            password=self.password,
+            role=User.Role.APPLICANT,
+        )
+
+    def test_login_success(self):
+        response = self.client.post(
+            self.url,
+            {"email": "login@example.com", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+        self.assertIn("role", response.data)
+        self.assertIn("user_id", response.data)
+        self.assertEqual(response.data["role"], User.Role.APPLICANT)
+        self.assertEqual(response.data["user_id"], str(self.user.id))
+
+    def test_login_wrong_password(self):
+        response = self.client.post(
+            self.url,
+            {"email": "login@example.com", "password": "wrongpassword"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_login_nonexistent_email(self):
+        response = self.client.post(
+            self.url,
+            {"email": "noone@example.com", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_login_inactive_user(self):
+        self.user.is_active = False
+        self.user.save()
+        response = self.client.post(
+            self.url,
+            {"email": "login@example.com", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_login_returns_valid_token(self):
+        response = self.client.post(
+            self.url,
+            {"email": "login@example.com", "password": self.password},
+            format="json",
+        )
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        token = AccessToken(response.data["access"])
+        self.assertEqual(token.payload.get("user_id"), str(self.user.id))
