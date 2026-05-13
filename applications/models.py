@@ -218,6 +218,8 @@ class Document(models.Model):
         NATIONAL_ID = "NATIONAL_ID", "National ID/Passport"
         TIN_CERTIFICATE = "TIN_CERTIFICATE", "TIN Certificate"
         RECEIPT = "RECEIPT", "Payment Receipt"
+        CONSENT = "CONSENT", "Planning Consent"
+        PERMIT = "PERMIT", "Construction Permit"
 
     class ValidationStatus(models.TextChoices):
         PENDING = "PENDING", "Pending Review"
