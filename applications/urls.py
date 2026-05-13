@@ -6,6 +6,7 @@ from .views import (
     ApplicationDocumentUploadView,
     ApplicationRequiredDocumentsView,
     ApplicationSubmitView,
+    ApplicationTimelineView,
 )
 
 urlpatterns = [
@@ -34,5 +35,10 @@ urlpatterns = [
         "applications/<uuid:application_id>/submit/",
         ApplicationSubmitView.as_view(),
         name="application-submit",
+    ),
+    path(
+        "applications/<uuid:application_id>/timeline/",
+        ApplicationTimelineView.as_view(),
+        name="application-timeline",
     ),
 ]

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Application, Document
+from .models import Application, ApplicationHistory, Document
 
 
 class RequiredDocumentSerializer(serializers.Serializer):
@@ -8,6 +8,20 @@ class RequiredDocumentSerializer(serializers.Serializer):
     uploaded = serializers.BooleanField()
     accepted = serializers.BooleanField()
     status = serializers.CharField(allow_null=True)
+
+
+class ApplicationHistorySerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApplicationHistory
+        fields = [
+            "id", "previous_status", "new_status", "note",
+            "actor_name", "created_at",
+        ]
+
+    def get_actor_name(self, obj):
+        return obj.actor.full_name if obj.actor else "System"
 
 
 class ApplicationCreateSerializer(serializers.ModelSerializer):

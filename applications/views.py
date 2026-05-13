@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import (
     ApplicationCreateSerializer,
+    ApplicationHistorySerializer,
     ApplicationUpdateSerializer,
     ApplicationDocumentSerializer,
     RequiredDocumentSerializer,
@@ -221,3 +222,20 @@ class ApplicationSubmitView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class ApplicationTimelineView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+
+    def get(self, request, application_id):
+        try:
+            app = Application.objects.get(pk=application_id, applicant=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        history = ApplicationHistory.objects.filter(application=app)
+        serializer = ApplicationHistorySerializer(history, many=True)
+        return Response(serializer.data)
