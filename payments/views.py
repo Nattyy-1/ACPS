@@ -74,7 +74,7 @@ class InvoicePayView(APIView):
         app = payment.application
 
         if method in (Payment.PaymentMethod.TELEBIRR, Payment.PaymentMethod.CBEBIRR):
-            time.sleep(0.1)
+            time.sleep(3)
             txn_ref = f"TXN-{datetime.date.today().year}-{payment.invoice_id.split('-')[-1]}"
 
             with transaction.atomic():
