@@ -176,3 +176,45 @@ class LoginAPITests(TestCase):
 
         token = AccessToken(response.data["access"])
         self.assertEqual(token.payload.get("user_id"), str(self.user.id))
+
+
+class RefreshAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/auth/refresh/"
+        self.password = "testpass123"
+        self.user = User.objects.create_user(
+            email="refresh@example.com",
+            full_name="Refresh User",
+            phone="+251911111111",
+            password=self.password,
+        )
+
+    def _get_tokens(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "refresh@example.com", "password": self.password},
+            format="json",
+        )
+        return response.data
+
+    def test_refresh_success(self):
+        tokens = self._get_tokens()
+        response = self.client.post(
+            self.url, {"refresh": tokens["refresh"]}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+
+    def test_refresh_invalid_token(self):
+        response = self.client.post(
+            self.url, {"refresh": "invalidtoken123"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_refresh_returns_new_access_token(self):
+        tokens = self._get_tokens()
+        response = self.client.post(
+            self.url, {"refresh": tokens["refresh"]}, format="json"
+        )
+        self.assertNotEqual(response.data["access"], tokens["access"])
