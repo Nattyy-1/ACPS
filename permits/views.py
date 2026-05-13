@@ -16,6 +16,7 @@ from accounts.permissions import IsAdmin, IsAdminOrSeniorOfficer, IsApplicant, I
 from applications.models import Application, ApplicationHistory, Document
 from inspections.models import Inspection
 from notifications.models import Notification
+from admin_config.models import OfficerSignature
 from .models import Permit
 from .pdf_utils import generate_planning_consent_pdf, generate_construction_permit_pdf, generate_completion_certificate_pdf
 from .serializers import AuthenticatedPermitSerializer, PublicPermitSerializer
@@ -164,6 +165,13 @@ class IssueConsentView(APIView):
         qr_token = permit_number.replace("-", "").lower()
         verify_url = f"{request.build_absolute_uri('/')[:-1]}/api/v1/verify/{permit_number}/"
 
+        sig_path = None
+        try:
+            sig = OfficerSignature.objects.get(officer=request.user)
+            sig_path = sig.signature_image.path
+        except OfficerSignature.DoesNotExist:
+            pass
+
         with transaction.atomic():
             permit = Permit.objects.create(
                 application=app,
@@ -176,7 +184,7 @@ class IssueConsentView(APIView):
                 status=Permit.Status.ACTIVE,
             )
 
-            pdf_buf = generate_planning_consent_pdf(app, permit, verify_url)
+            pdf_buf = generate_planning_consent_pdf(app, permit, verify_url, sig_path)
             file_name = f"planning_consent_{permit_number}.pdf"
 
             permit.document_path.save(file_name, pdf_buf, save=True)
@@ -268,6 +276,13 @@ class IssuePermitView(APIView):
         qr_token = permit_number.replace("-", "").lower()
         verify_url = f"{request.build_absolute_uri('/')[:-1]}/api/v1/verify/{permit_number}/"
 
+        sig_path = None
+        try:
+            sig = OfficerSignature.objects.get(officer=request.user)
+            sig_path = sig.signature_image.path
+        except OfficerSignature.DoesNotExist:
+            pass
+
         with transaction.atomic():
             permit = Permit.objects.create(
                 application=app,
@@ -280,7 +295,7 @@ class IssuePermitView(APIView):
                 status=Permit.Status.ACTIVE,
             )
 
-            pdf_buf = generate_construction_permit_pdf(app, permit, verify_url)
+            pdf_buf = generate_construction_permit_pdf(app, permit, verify_url, sig_path)
             file_name = f"construction_permit_{permit_number}.pdf"
 
             permit.document_path.save(file_name, pdf_buf, save=True)
@@ -497,6 +512,13 @@ class IssueCompletionCertificateView(APIView):
         qr_token = permit_number.replace("-", "").lower()
         verify_url = f"{request.build_absolute_uri('/')[:-1]}/api/v1/verify/{permit_number}/"
 
+        sig_path = None
+        try:
+            sig = OfficerSignature.objects.get(officer=request.user)
+            sig_path = sig.signature_image.path
+        except OfficerSignature.DoesNotExist:
+            pass
+
         with transaction.atomic():
             permit = Permit.objects.create(
                 application=app,
@@ -509,7 +531,7 @@ class IssueCompletionCertificateView(APIView):
                 status=Permit.Status.ACTIVE,
             )
 
-            pdf_buf = generate_completion_certificate_pdf(app, permit, verify_url)
+            pdf_buf = generate_completion_certificate_pdf(app, permit, verify_url, sig_path)
             file_name = f"completion_certificate_{permit_number}.pdf"
             permit.document_path.save(file_name, pdf_buf, save=True)
 

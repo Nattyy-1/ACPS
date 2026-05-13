@@ -13,12 +13,13 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from accounts.permissions import IsAdmin
+from django.contrib.auth import get_user_model
 from applications.models import Application, ApplicationHistory
 from inspections.models import Inspection, InspectionChecklistTemplate
 from notifications.services import EVENT_EMAIL_TEMPLATES
 from payments.models import FeeSchedule, Payment
 from reviews.models import SLAConfig
-from .models import NotificationTemplate
+from .models import NotificationTemplate, OfficerSignature
 
 
 class AdminStatsView(APIView):
@@ -359,3 +360,49 @@ class ReportsExportView(APIView):
             )
 
         return response
+
+
+class SignatureView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdmin]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request, user_id):
+        User = get_user_model()
+        officer = get_object_or_404(User, pk=user_id)
+        try:
+            sig = OfficerSignature.objects.get(officer=officer)
+            return Response({
+                "officer_id": str(officer.id),
+                "officer_name": officer.full_name,
+                "signature_url": sig.signature_image.url if sig.signature_image else None,
+                "uploaded_at": sig.uploaded_at.isoformat(),
+            })
+        except OfficerSignature.DoesNotExist:
+            return Response({"detail": "No signature found for this officer."}, status=status.HTTP_404_NOT_FOUND)
+
+    def post(self, request, user_id):
+        User = get_user_model()
+        officer = get_object_or_404(User, pk=user_id)
+
+        file = request.FILES.get("signature")
+        if not file:
+            return Response({"detail": "Signature file is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if file.size == 0:
+            return Response({"detail": "File cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+        if file.size > 2 * 1024 * 1024:
+            return Response({"detail": "File size must not exceed 2MB."}, status=status.HTTP_400_BAD_REQUEST)
+        content_type = getattr(file, "content_type", "")
+        if content_type not in ("image/png",):
+            return Response({"detail": "Signature must be a PNG file."}, status=status.HTTP_400_BAD_REQUEST)
+
+        sig, created = OfficerSignature.objects.update_or_create(
+            officer=officer,
+            defaults={"signature_image": file},
+        )
+        return Response({
+            "detail": "Signature uploaded." if created else "Signature updated.",
+            "officer_id": str(officer.id),
+            "officer_name": officer.full_name,
+            "signature_url": sig.signature_image.url if sig.signature_image else None,
+        })

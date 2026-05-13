@@ -1,9 +1,11 @@
 import io
+import os
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
+from reportlab.lib.utils import ImageReader
 
 
 def _draw_qr(c, x, y, url, size=80):
@@ -13,7 +15,22 @@ def _draw_qr(c, x, y, url, size=80):
     renderPDF.draw(d, c, x, y)
 
 
-def generate_planning_consent_pdf(application, permit, verify_url=""):
+def _draw_signature(c, x, y, signature_path=None, label="Authorized Signature:"):
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(x, y, label)
+    if signature_path and os.path.exists(signature_path):
+        try:
+            img = ImageReader(signature_path)
+            c.drawImage(img, x, y - 35, width=120, height=35, preserveAspectRatio=True)
+        except Exception:
+            c.setFont("Helvetica", 9)
+            c.drawString(x, y - 18, "_________________________")
+    else:
+        c.setFont("Helvetica", 9)
+        c.drawString(x, y - 18, "_________________________")
+    c.setFont("Helvetica", 9)
+    c.drawString(x, y - 40, "Senior Approving Officer")
+def generate_planning_consent_pdf(application, permit, verify_url="", signature_path=None):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -54,11 +71,7 @@ def generate_planning_consent_pdf(application, permit, verify_url=""):
         c.setFont("Helvetica", 8)
         c.drawString(40, y - 110, "Scan to verify permit validity")
 
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(40, y - 160, "Authorized Signature:")
-    c.setFont("Helvetica", 9)
-    c.drawString(40, y - 178, "_________________________")
-    c.drawString(40, y - 193, "Senior Approving Officer")
+    _draw_signature(c, 40, y - 160, signature_path)
 
     c.showPage()
     c.save()
@@ -66,7 +79,7 @@ def generate_planning_consent_pdf(application, permit, verify_url=""):
     return buf
 
 
-def generate_construction_permit_pdf(application, permit, verify_url=""):
+def generate_construction_permit_pdf(application, permit, verify_url="", signature_path=None):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -124,11 +137,7 @@ def generate_construction_permit_pdf(application, permit, verify_url=""):
         c.setFont("Helvetica", 8)
         c.drawString(40, y - 90, "Scan to verify permit validity")
 
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(40, y - 140, "Authorized Signature:")
-    c.setFont("Helvetica", 9)
-    c.drawString(40, y - 158, "_________________________")
-    c.drawString(40, y - 173, "Senior Approving Officer")
+    _draw_signature(c, 40, y - 140, signature_path)
 
     c.showPage()
     c.save()
@@ -136,7 +145,7 @@ def generate_construction_permit_pdf(application, permit, verify_url=""):
     return buf
 
 
-def generate_completion_certificate_pdf(application, permit, verify_url=""):
+def generate_completion_certificate_pdf(application, permit, verify_url="", signature_path=None):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -193,11 +202,7 @@ def generate_completion_certificate_pdf(application, permit, verify_url=""):
         c.setFont("Helvetica", 8)
         c.drawString(40, y - 90, "Scan to verify certificate validity")
 
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(40, y - 150, "Authorized Signature:")
-    c.setFont("Helvetica", 9)
-    c.drawString(40, y - 168, "_________________________")
-    c.drawString(40, y - 183, "Senior Approving Officer")
+    _draw_signature(c, 40, y - 150, signature_path)
 
     c.showPage()
     c.save()

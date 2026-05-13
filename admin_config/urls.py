@@ -7,6 +7,7 @@ from .views import (
     InspectionChecklistConfigView,
     NotificationTemplateConfigView,
     ReportsExportView,
+    SignatureView,
 )
 
 urlpatterns = [
@@ -36,5 +37,10 @@ urlpatterns = [
         "admin/reports/export/",
         ReportsExportView.as_view(),
         name="admin-reports-export",
+    ),
+    path(
+        "admin/signatures/<uuid:user_id>/",
+        SignatureView.as_view(),
+        name="admin-signature",
     ),
 ]
