@@ -626,3 +626,81 @@ class LoginAttemptLogModelTests(TestCase):
         older.save(update_fields=["timestamp"])
         latest = LoginAttemptLog.objects.first()
         self.assertEqual(latest.email, "test@example.com")
+
+
+class CurrentUserAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/users/me/"
+        self.password = "testpass123"
+        self.user = User.objects.create_user(
+            email="profile@example.com",
+            full_name="Profile User",
+            phone="+251911111111",
+            password=self.password,
+            role=User.Role.APPLICANT,
+        )
+
+    def _auth(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "profile@example.com", "password": self.password},
+            format="json",
+        )
+        return f"Bearer {response.data['access']}"
+
+    def test_get_profile_success(self):
+        response = self.client.get(self.url, HTTP_AUTHORIZATION=self._auth())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "profile@example.com")
+        self.assertEqual(response.data["full_name"], "Profile User")
+        self.assertEqual(response.data["phone"], "+251911111111")
+        self.assertEqual(response.data["role"], User.Role.APPLICANT)
+        self.assertIn("id", response.data)
+        self.assertIn("subcity_id", response.data)
+
+    def test_get_profile_unauthenticated(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_update_profile_success(self):
+        response = self.client.put(
+            self.url,
+            {"full_name": "Updated Name", "phone": "+251922222222"},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["full_name"], "Updated Name")
+        self.assertEqual(response.data["phone"], "+251922222222")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.full_name, "Updated Name")
+
+    def test_update_profile_unauthenticated(self):
+        response = self.client.put(
+            self.url,
+            {"full_name": "Updated Name"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_update_profile_read_only_fields(self):
+        response = self.client.put(
+            self.url,
+            {"email": "hacked@example.com", "role": "ADMIN"},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "profile@example.com")
+        self.assertEqual(self.user.role, User.Role.APPLICANT)
+
+    def test_update_profile_partial(self):
+        response = self.client.put(
+            self.url,
+            {"subcity_id": "SUBCITY_01"},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["subcity_id"], "SUBCITY_01")

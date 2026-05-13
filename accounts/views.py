@@ -14,6 +14,7 @@ from .serializers import (
     LoginSerializer,
     ForgotPasswordSerializer,
     ResetPasswordSerializer,
+    UserProfileSerializer,
 )
 
 User = get_user_model()
@@ -93,3 +94,20 @@ class ResetPasswordView(APIView):
             {"message": "Password has been reset successfully"},
             status=status.HTTP_200_OK,
         )
+
+
+class CurrentUserView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data)
+
+    def put(self, request):
+        serializer = UserProfileSerializer(
+            request.user, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
