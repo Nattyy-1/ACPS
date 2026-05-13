@@ -708,6 +708,34 @@ class CurrentUserAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["subcity_id"], "SUBCITY_01")
 
+    def test_update_tin_valid_10_digits(self):
+        response = self.client.put(
+            self.url,
+            {"tin": "1234567890"},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["tin"], "1234567890")
+
+    def test_update_tin_invalid_not_10_digits(self):
+        response = self.client.put(
+            self.url,
+            {"tin": "12345"},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_tin_invalid_non_numeric(self):
+        response = self.client.put(
+            self.url,
+            {"tin": "ABCDEFGHIJ"},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class AdminUserAPITests(TestCase):
     def setUp(self):

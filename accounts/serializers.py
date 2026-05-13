@@ -83,6 +83,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "email", "role", "status")
 
+    def validate_tin(self, value):
+        if value and (len(value) != 10 or not value.isdigit()):
+            raise serializers.ValidationError("TIN must be exactly 10 digits.")
+        return value
+
 
 class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:

@@ -21,13 +21,29 @@ class DocumentAdmin(admin.ModelAdmin):
     list_display = (
         "document_type",
         "application",
+        "uploader",
         "validation_status",
+        "rejection_reason",
         "version_number",
         "is_current",
     )
     list_filter = ("document_type", "validation_status")
-    search_fields = ("application__arn", "file_name")
+    list_editable = ("validation_status", "rejection_reason")
+    search_fields = ("application__arn", "file_name", "uploader__email")
     readonly_fields = ("created_at", "updated_at")
+    actions = ["mark_accepted", "mark_rejected"]
+
+    def mark_accepted(self, request, queryset):
+        updated = queryset.update(validation_status="ACCEPTED", rejection_reason="")
+        self.message_user(request, f"{updated} document(s) marked as Accepted.")
+
+    mark_accepted.short_description = "Mark selected documents as Accepted"
+
+    def mark_rejected(self, request, queryset):
+        updated = queryset.update(validation_status="REJECTED")
+        self.message_user(request, f"{updated} document(s) marked as Rejected.")
+
+    mark_rejected.short_description = "Mark selected documents as Rejected"
 
 
 @admin.register(ApplicationHistory)
