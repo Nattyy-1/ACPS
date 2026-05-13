@@ -87,6 +87,19 @@ class Application(models.Model):
             next_num = 1
         return f"{prefix}{next_num:06d}"
 
+    def auto_classify(self):
+        floors = self.floors_above if self.floors_above else 0
+        if floors <= 1:
+            return self.Category.A
+        elif floors <= 4:
+            return self.Category.B
+        return self.Category.C
+
+    def save(self, *args, **kwargs):
+        if not self.building_category:
+            self.building_category = self.auto_classify()
+        super().save(*args, **kwargs)
+
     @staticmethod
     def calculate_fee(project_value_etb):
         from decimal import Decimal

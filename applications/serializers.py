@@ -6,7 +6,6 @@ class ApplicationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Application
         fields = (
-            "building_category",
             "intended_use",
             "height_m",
             "floors_above",
@@ -31,12 +30,11 @@ class ApplicationCreateSerializer(serializers.ModelSerializer):
             Application.calculate_fee(project_value) if project_value else None
         )
         arn = Application.generate_arn()
-        app = Application.objects.create(
-            applicant=user,
-            arn=arn,
-            calculated_fee=calculated_fee,
-            **validated_data,
+        validated_data.pop("building_category", None)
+        app = Application(
+            **validated_data, applicant=user, arn=arn, calculated_fee=calculated_fee
         )
+        app.save()
         return app
 
     def to_representation(self, instance):
@@ -44,6 +42,7 @@ class ApplicationCreateSerializer(serializers.ModelSerializer):
             "application_id": str(instance.id),
             "arn": instance.arn,
             "status": instance.status,
+            "building_category": instance.building_category,
             "calculated_fee": float(instance.calculated_fee)
             if instance.calculated_fee
             else None,

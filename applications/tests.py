@@ -247,7 +247,6 @@ class ApplicationCreateAPITests(TestCase):
 
     def _valid_data(self):
         return {
-            "building_category": "B",
             "intended_use": "Residential",
             "height_m": 12.5,
             "floors_above": 3,
@@ -330,3 +329,31 @@ class ApplicationCreateAPITests(TestCase):
         num1 = int(resp1.data["arn"].split("-")[-1])
         num2 = int(resp2.data["arn"].split("-")[-1])
         self.assertEqual(num2, num1 + 1)
+
+    def test_auto_classify_category_a_single_story(self):
+        data = self._valid_data()
+        data["floors_above"] = 1
+        response = self.client.post(
+            self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["building_category"], "A")
+
+    def test_auto_classify_category_b_2_to_4_floors(self):
+        for floors in [2, 3, 4]:
+            data = self._valid_data()
+            data["floors_above"] = floors
+            response = self.client.post(
+                self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+            self.assertEqual(response.data["building_category"], "B")
+
+    def test_auto_classify_category_c_5_plus_floors(self):
+        data = self._valid_data()
+        data["floors_above"] = 5
+        response = self.client.post(
+            self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["building_category"], "C")
