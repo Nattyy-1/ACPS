@@ -100,6 +100,62 @@ class Application(models.Model):
             self.building_category = self.auto_classify()
         super().save(*args, **kwargs)
 
+    def get_fee_breakdown(self):
+        from decimal import Decimal
+
+        value = self.project_value_etb
+        if not value:
+            return {"project_value_etb": None, "total": None}
+        if value < Decimal("2500000"):
+            base_fee = value / Decimal("2000")
+            fixed_fee = Decimal("300")
+            return {
+                "project_value_etb": float(value),
+                "calculation_method": "FORMULA",
+                "base_fee": float(base_fee),
+                "fixed_fee": float(fixed_fee),
+                "base_description": "1/2000 of project value",
+                "fixed_description": "Planning consent fee",
+                "total": float(base_fee + fixed_fee),
+            }
+        from payments.models import FeeSchedule
+
+        tier = (
+            FeeSchedule.objects.filter(min_value_etb__lte=value)
+            .filter(
+                models.Q(max_value_etb__isnull=True)
+                | models.Q(max_value_etb__gte=value)
+            )
+            .order_by("min_value_etb")
+            .first()
+        )
+        if tier:
+            base_fee = value * tier.fee_percentage
+            fixed_fee = tier.fixed_fee_etb
+            return {
+                "project_value_etb": float(value),
+                "calculation_method": "TIERED",
+                "base_fee": float(base_fee),
+                "fixed_fee": float(fixed_fee),
+                "tier_min": float(tier.min_value_etb),
+                "tier_max": float(tier.max_value_etb) if tier.max_value_etb else None,
+                "tier_percentage": float(tier.fee_percentage),
+                "base_description": f"{float(tier.fee_percentage * 100)}% of project value",
+                "fixed_description": "Tier fixed fee",
+                "total": float(base_fee + fixed_fee),
+            }
+        base_fee = value / Decimal("2000")
+        fixed_fee = Decimal("300")
+        return {
+            "project_value_etb": float(value),
+            "calculation_method": "FALLBACK",
+            "base_fee": float(base_fee),
+            "fixed_fee": float(fixed_fee),
+            "base_description": "1/2000 of project value (fallback)",
+            "fixed_description": "Planning consent fee",
+            "total": float(base_fee + fixed_fee),
+        }
+
     @staticmethod
     def calculate_fee(project_value_etb):
         from decimal import Decimal

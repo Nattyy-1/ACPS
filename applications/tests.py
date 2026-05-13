@@ -395,6 +395,63 @@ class ApplicationCreateAPITests(TestCase):
         expected = float(5000000 * 0.001 + 500)
         self.assertEqual(response.data["calculated_fee"], expected)
 
+    def _create_app_and_get_fee_url(self, data_overrides=None):
+        data = self._valid_data()
+        if data_overrides:
+            data.update(data_overrides)
+        create_resp = self.client.post(
+            self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        app_id = create_resp.data["application_id"]
+        return f"/api/v1/applications/{app_id}/fee/"
+
+    def test_fee_breakdown_formula(self):
+        url = self._create_app_and_get_fee_url({"project_value_etb": 1500000})
+        response = self.client.get(url, HTTP_AUTHORIZATION=self._auth())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["calculation_method"], "FORMULA")
+        self.assertEqual(response.data["project_value_etb"], 1500000.0)
+        self.assertAlmostEqual(response.data["base_fee"], 750.0)
+        self.assertEqual(response.data["fixed_fee"], 300.0)
+        self.assertAlmostEqual(response.data["total"], 1050.0)
+
+    def test_fee_breakdown_tiered(self):
+        FeeSchedule.objects.create(
+            min_value_etb=Decimal("2500000"),
+            max_value_etb=None,
+            fee_percentage=Decimal("0.001"),
+            fixed_fee_etb=Decimal("500"),
+        )
+        url = self._create_app_and_get_fee_url({"project_value_etb": 5000000})
+        response = self.client.get(url, HTTP_AUTHORIZATION=self._auth())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["calculation_method"], "TIERED")
+        self.assertAlmostEqual(response.data["total"], 5500.0)
+
+    def test_fee_breakdown_unauthorized(self):
+        officer = User.objects.create_user(
+            email="officer@test.com",
+            full_name="Officer",
+            phone="+251922222222",
+            password="pass123",
+            role=User.Role.REVIEW_OFFICER,
+        )
+        url = self._create_app_and_get_fee_url()
+        login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "officer@test.com", "password": "pass123"},
+            format="json",
+        )
+        response = self.client.get(
+            url, HTTP_AUTHORIZATION=f"Bearer {login.data['access']}"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_fee_breakdown_not_found(self):
+        url = f"/api/v1/applications/{'00000000-0000-0000-0000-000000000000'}/fee/"
+        response = self.client.get(url, HTTP_AUTHORIZATION=self._auth())
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_fee_above_threshold_without_schedule_falls_back(self):
         data = self._valid_data()
         data["project_value_etb"] = 5000000
