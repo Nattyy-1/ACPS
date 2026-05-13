@@ -331,3 +331,107 @@ class ForgotPasswordAPITests(TestCase):
         )
         self.assertIn("reset-password", django.core.mail.outbox[0].body)
         self.assertIn("Password Reset", django.core.mail.outbox[0].subject)
+
+
+class ResetPasswordAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/auth/reset-password/"
+        self.password = "oldpass123"
+        self.new_password = "newpass456"
+        self.user = User.objects.create_user(
+            email="reset@example.com",
+            full_name="Reset User",
+            phone="+251911111111",
+            password=self.password,
+        )
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        from django.contrib.auth.tokens import PasswordResetTokenGenerator
+
+        self.uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        self.token = PasswordResetTokenGenerator().make_token(self.user)
+
+    def test_reset_password_success(self):
+        response = self.client.post(
+            self.url,
+            {
+                "uid": self.uid,
+                "token": self.token,
+                "new_password": self.new_password,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Password has been reset successfully"
+        )
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.new_password))
+
+    def test_reset_password_can_login_with_new_password(self):
+        self.client.post(
+            self.url,
+            {
+                "uid": self.uid,
+                "token": self.token,
+                "new_password": self.new_password,
+            },
+            format="json",
+        )
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "reset@example.com", "password": self.new_password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+
+    def test_reset_password_cannot_login_with_old_password(self):
+        self.client.post(
+            self.url,
+            {
+                "uid": self.uid,
+                "token": self.token,
+                "new_password": self.new_password,
+            },
+            format="json",
+        )
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "reset@example.com", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_reset_password_invalid_uid(self):
+        response = self.client.post(
+            self.url,
+            {
+                "uid": "invalid-uid",
+                "token": self.token,
+                "new_password": self.new_password,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reset_password_invalid_token(self):
+        response = self.client.post(
+            self.url,
+            {
+                "uid": self.uid,
+                "token": "bad-token",
+                "new_password": self.new_password,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reset_password_short_new_password(self):
+        response = self.client.post(
+            self.url,
+            {"uid": self.uid, "token": self.token, "new_password": "short"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

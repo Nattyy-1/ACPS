@@ -9,7 +9,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenBlacklistView
-from .serializers import RegisterSerializer, LoginSerializer, ForgotPasswordSerializer
+from .serializers import (
+    RegisterSerializer,
+    LoginSerializer,
+    ForgotPasswordSerializer,
+    ResetPasswordSerializer,
+)
 
 User = get_user_model()
 
@@ -60,5 +65,18 @@ class ForgotPasswordView(APIView):
 
         return Response(
             {"message": "Password reset link sent to your email"},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"message": "Password has been reset successfully"},
             status=status.HTTP_200_OK,
         )

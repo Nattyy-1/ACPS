@@ -1,5 +1,6 @@
-from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
@@ -32,3 +33,34 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_uid(self, value):
+        from django.utils.encoding import force_str
+        from django.utils.http import urlsafe_base64_decode
+
+        try:
+            uid = force_str(urlsafe_base64_decode(value))
+            user = User.objects.get(pk=uid)
+        except (ValueError, TypeError, OverflowError, User.DoesNotExist):
+            raise serializers.ValidationError("Invalid user identifier.")
+        self._reset_user = user
+        return value
+
+    def validate(self, attrs):
+        token = attrs.get("token")
+        user = getattr(self, "_reset_user", None)
+        if user and not PasswordResetTokenGenerator().check_token(user, token):
+            raise serializers.ValidationError({"token": "Invalid or expired token."})
+        return attrs
+
+    def save(self):
+        user = self._reset_user
+        user.set_password(self.validated_data["new_password"])
+        user.save()
+        return user
