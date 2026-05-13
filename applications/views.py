@@ -9,18 +9,56 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import (
     ApplicationCreateSerializer,
     ApplicationHistorySerializer,
+    ApplicationListSerializer,
     ApplicationUpdateSerializer,
     ApplicationDocumentSerializer,
     RequiredDocumentSerializer,
 )
 from .models import Application, ApplicationHistory, Document
-from accounts.permissions import IsApplicant
+from accounts.permissions import (
+    IsAdmin,
+    IsAdminOrSeniorOfficer,
+    IsApplicant,
+    IsInspector,
+    IsReviewOfficer,
+    IsSeniorOfficer,
+)
 from payments.models import Payment
 
 
 class ApplicationCreateView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsApplicant]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            role = getattr(self.request.user, "role", None)
+            if role == "APPLICANT":
+                return [IsApplicant()]
+            elif role == "REVIEW_OFFICER":
+                return [IsReviewOfficer()]
+            elif role == "INSPECTOR":
+                return [IsInspector()]
+            elif role == "SENIOR_OFFICER":
+                return [IsSeniorOfficer()]
+            return [IsAdmin()]
+        return [IsApplicant()]
+
+    def get(self, request):
+        user = request.user
+        if user.role == "APPLICANT":
+            qs = Application.objects.filter(applicant=user)
+        elif user.role == "REVIEW_OFFICER":
+            qs = Application.objects.filter(assigned_officer=user)
+        else:
+            qs = Application.objects.all()
+
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter.upper())
+
+        qs = qs.order_by("-created_at")
+        serializer = ApplicationListSerializer(qs, many=True)
+        return Response(serializer.data)
 
     def post(self, request):
         serializer = ApplicationCreateSerializer(

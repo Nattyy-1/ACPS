@@ -2,6 +2,29 @@ from rest_framework import serializers
 from .models import Application, ApplicationHistory, Document
 
 
+class ApplicationListSerializer(serializers.ModelSerializer):
+    application_id = serializers.UUIDField(source="id")
+    applicant_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Application
+        fields = [
+            "application_id", "arn", "status", "building_category",
+            "calculated_fee", "subcity_id", "created_at",
+            "applicant_name",
+        ]
+
+    def get_applicant_name(self, obj):
+        return obj.applicant.full_name
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["calculated_fee"] = (
+            float(instance.calculated_fee) if instance.calculated_fee else None
+        )
+        return data
+
+
 class RequiredDocumentSerializer(serializers.Serializer):
     document_type = serializers.CharField()
     label = serializers.CharField()
