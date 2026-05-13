@@ -115,3 +115,28 @@ class Task7EmailBackendTests(TestCase):
     def test_email_backend_configured(self):
         self.assertTrue(settings.EMAIL_BACKEND is not None)
         self.assertIn("EmailBackend", settings.EMAIL_BACKEND)
+
+
+class Task32BcryptConfigurationTests(TestCase):
+    def test_bcrypt_is_first_hasher(self):
+        self.assertEqual(
+            settings.PASSWORD_HASHERS[0],
+            "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+        )
+
+    def test_bcrypt_has_cost_factor_12(self):
+        from django.contrib.auth.hashers import BCryptSHA256PasswordHasher
+
+        self.assertGreaterEqual(BCryptSHA256PasswordHasher.rounds, 12)
+
+    def test_bcrypt_importable(self):
+        try:
+            import bcrypt
+        except ImportError:
+            self.fail("bcrypt package is not installed")
+
+    def test_password_uses_bcrypt(self):
+        from django.contrib.auth.hashers import make_password
+
+        hashed = make_password("testpassword123")
+        self.assertTrue(hashed.startswith("bcrypt"))
