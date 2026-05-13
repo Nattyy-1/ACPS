@@ -81,3 +81,74 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "tin",
         )
         read_only_fields = ("id", "email", "role", "status")
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "full_name",
+            "phone",
+            "role",
+            "status",
+            "subcity_id",
+            "land_certificate_number",
+            "tin",
+            "is_active",
+            "date_joined",
+            "last_login",
+        )
+        read_only_fields = fields
+
+
+class CreateOfficerSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = ("email", "full_name", "phone", "role", "subcity_id", "password")
+
+    def validate_role(self, value):
+        if value == User.Role.APPLICANT:
+            raise serializers.ValidationError(
+                "Officer accounts cannot have APPLICANT role."
+            )
+        valid_roles = [
+            User.Role.REVIEW_OFFICER,
+            User.Role.INSPECTOR,
+            User.Role.SENIOR_OFFICER,
+            User.Role.ADMIN,
+        ]
+        if value not in valid_roles:
+            raise serializers.ValidationError(f"Invalid officer role: {value}")
+        return value
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value.lower()
+
+    def create(self, validated_data):
+        import secrets
+        import string
+
+        temp_password = "".join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(12)
+        )
+        user = User.objects.create_user(
+            email=validated_data["email"],
+            full_name=validated_data["full_name"],
+            phone=validated_data["phone"],
+            password=temp_password,
+            role=validated_data["role"],
+            subcity_id=validated_data.get("subcity_id", ""),
+        )
+        self._temp_password = temp_password
+        return user
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["password"] = getattr(self, "_temp_password", "")
+        return data

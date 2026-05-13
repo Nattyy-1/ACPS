@@ -704,3 +704,262 @@ class CurrentUserAPITests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["subcity_id"], "SUBCITY_01")
+
+
+class AdminUserAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_password = "adminpass123"
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            full_name="Admin User",
+            phone="+251900000000",
+            password=self.admin_password,
+            role=User.Role.ADMIN,
+        )
+        self.target_user = User.objects.create_user(
+            email="target@example.com",
+            full_name="Target User",
+            phone="+251911111111",
+            password="testpass123",
+            role=User.Role.APPLICANT,
+        )
+
+    def _admin_auth(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "admin@example.com", "password": self.admin_password},
+            format="json",
+        )
+        return f"Bearer {response.data['access']}"
+
+    def test_admin_get_user_detail(self):
+        response = self.client.get(
+            f"/api/v1/users/{self.target_user.id}/",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "target@example.com")
+        self.assertEqual(response.data["full_name"], "Target User")
+        self.assertIn("date_joined", response.data)
+        self.assertIn("is_active", response.data)
+
+    def test_admin_get_user_detail_nonexistent(self):
+        response = self.client.get(
+            "/api/v1/users/999999/",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_get_user_detail_unauthorized_role(self):
+        applicant = User.objects.create_user(
+            email="applicant@example.com",
+            full_name="Applicant",
+            phone="+251922222222",
+            password="pass123",
+            role=User.Role.APPLICANT,
+        )
+        login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "applicant@example.com", "password": "pass123"},
+            format="json",
+        )
+        response = self.client.get(
+            f"/api/v1/users/{self.target_user.id}/",
+            HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_get_user_detail_unauthenticated(self):
+        response = self.client.get(f"/api/v1/users/{self.target_user.id}/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class AdminUserListAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_password = "adminpass123"
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            full_name="Admin User",
+            phone="+251900000000",
+            password=self.admin_password,
+            role=User.Role.ADMIN,
+        )
+        User.objects.create_user(
+            email="officer1@example.com",
+            full_name="Officer One",
+            phone="+251911111111",
+            password="pass123",
+            role=User.Role.REVIEW_OFFICER,
+        )
+        User.objects.create_user(
+            email="officer2@example.com",
+            full_name="Officer Two",
+            phone="+251922222222",
+            password="pass123",
+            role=User.Role.INSPECTOR,
+        )
+
+    def _admin_auth(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "admin@example.com", "password": self.admin_password},
+            format="json",
+        )
+        return f"Bearer {response.data['access']}"
+
+    def test_admin_list_users(self):
+        response = self.client.get(
+            "/api/v1/users/",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("results", response.data)
+        self.assertIn("count", response.data)
+        self.assertGreaterEqual(len(response.data["results"]), 3)
+
+    def test_admin_list_users_filter_by_role(self):
+        response = self.client.get(
+            "/api/v1/users/?role=REVIEW_OFFICER",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for user in response.data["results"]:
+            self.assertEqual(user["role"], "REVIEW_OFFICER")
+
+    def test_admin_list_users_unauthenticated(self):
+        response = self.client.get("/api/v1/users/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class AdminCreateUserAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_password = "adminpass123"
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            full_name="Admin User",
+            phone="+251900000000",
+            password=self.admin_password,
+            role=User.Role.ADMIN,
+        )
+
+    def _admin_auth(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "admin@example.com", "password": self.admin_password},
+            format="json",
+        )
+        return f"Bearer {response.data['access']}"
+
+    def test_admin_create_officer(self):
+        response = self.client.post(
+            "/api/v1/users/",
+            {
+                "email": "newofficer@example.com",
+                "full_name": "New Officer",
+                "phone": "+251933333333",
+                "role": "REVIEW_OFFICER",
+                "subcity_id": "SUBCITY_01",
+            },
+            format="json",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["email"], "newofficer@example.com")
+        self.assertEqual(response.data["role"], "REVIEW_OFFICER")
+        self.assertIn("password", response.data)
+        self.assertTrue(User.objects.filter(email="newofficer@example.com").exists())
+
+    def test_admin_create_officer_rejects_applicant_role(self):
+        response = self.client.post(
+            "/api/v1/users/",
+            {
+                "email": "applicantofficer@example.com",
+                "full_name": "Not Allowed",
+                "phone": "+251944444444",
+                "role": "APPLICANT",
+            },
+            format="json",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_create_officer_unauthenticated(self):
+        response = self.client.post(
+            "/api/v1/users/",
+            {
+                "email": "noauth@example.com",
+                "full_name": "No Auth",
+                "phone": "+251955555555",
+                "role": "INSPECTOR",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class AdminDeactivateUserAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_password = "adminpass123"
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            full_name="Admin User",
+            phone="+251900000000",
+            password=self.admin_password,
+            role=User.Role.ADMIN,
+        )
+        self.target = User.objects.create_user(
+            email="todeactivate@example.com",
+            full_name="To Deactivate",
+            phone="+251911111111",
+            password="pass123",
+            role=User.Role.REVIEW_OFFICER,
+        )
+
+    def _admin_auth(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "admin@example.com", "password": self.admin_password},
+            format="json",
+        )
+        return f"Bearer {response.data['access']}"
+
+    def test_admin_deactivate_user(self):
+        response = self.client.put(
+            f"/api/v1/users/{self.target.id}/deactivate/",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("message", response.data)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.status, "INACTIVE")
+        self.assertFalse(self.target.is_active)
+
+    def test_admin_deactivate_nonexistent_user(self):
+        response = self.client.put(
+            "/api/v1/users/999999/deactivate/",
+            HTTP_AUTHORIZATION=self._admin_auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_deactivate_unauthorized_role(self):
+        applicant = User.objects.create_user(
+            email="applicant@example.com",
+            full_name="Applicant",
+            phone="+251922222222",
+            password="pass123",
+            role=User.Role.APPLICANT,
+        )
+        login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "applicant@example.com", "password": "pass123"},
+            format="json",
+        )
+        response = self.client.put(
+            f"/api/v1/users/{self.target.id}/deactivate/",
+            HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

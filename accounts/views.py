@@ -15,7 +15,10 @@ from .serializers import (
     ForgotPasswordSerializer,
     ResetPasswordSerializer,
     UserProfileSerializer,
+    AdminUserSerializer,
+    CreateOfficerSerializer,
 )
+from .permissions import IsAdmin
 
 User = get_user_model()
 
@@ -111,3 +114,80 @@ class CurrentUserView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class AdminUserDetailView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdmin]
+
+    def get(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = AdminUserSerializer(user)
+        return Response(serializer.data)
+
+
+class AdminUserListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        queryset = User.objects.all().order_by("id")
+        role = request.query_params.get("role")
+        status_param = request.query_params.get("status")
+        if role:
+            queryset = queryset.filter(role=role)
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = AdminUserSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = AdminUserSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @property
+    def paginator(self):
+        if not hasattr(self, "_paginator"):
+            from rest_framework.pagination import PageNumberPagination
+
+            self._paginator = PageNumberPagination()
+            self._paginator.page_size = 20
+            self._paginator.page_query_param = "page"
+        return self._paginator
+
+    def paginate_queryset(self, queryset):
+        return self.paginator.paginate_queryset(queryset, self.request)
+
+    def get_paginated_response(self, data):
+        return self.paginator.get_paginated_response(data)
+
+    def post(self, request):
+        serializer = CreateOfficerSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AdminDeactivateUserView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdmin]
+
+    def put(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+        user.status = "INACTIVE"
+        user.is_active = False
+        user.save(update_fields=["status", "is_active"])
+        return Response(
+            {"message": "User account deactivated", "user_id": str(user.id)},
+            status=status.HTTP_200_OK,
+        )
