@@ -27,4 +27,5 @@ urlpatterns = [
     path("api/v1/", include("permits.urls")),
     path("api/v1/", include("inspections.urls")),
     path("api/v1/", include("notifications.urls")),
+    path("api/v1/", include("admin_config.urls")),
 ]
