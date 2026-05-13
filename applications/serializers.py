@@ -2,6 +2,14 @@ from rest_framework import serializers
 from .models import Application, Document
 
 
+class RequiredDocumentSerializer(serializers.Serializer):
+    document_type = serializers.CharField()
+    label = serializers.CharField()
+    uploaded = serializers.BooleanField()
+    accepted = serializers.BooleanField()
+    status = serializers.CharField(allow_null=True)
+
+
 class ApplicationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Application

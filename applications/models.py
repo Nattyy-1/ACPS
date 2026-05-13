@@ -95,6 +95,32 @@ class Application(models.Model):
             return self.Category.B
         return self.Category.C
 
+    def get_required_document_types(self):
+        mapping = {
+            self.Category.A: [
+                Document.DocumentType.ARCHITECTURAL,
+                Document.DocumentType.NATIONAL_ID,
+            ],
+            self.Category.B: [
+                Document.DocumentType.ARCHITECTURAL,
+                Document.DocumentType.STRUCTURAL,
+                Document.DocumentType.SANITARY,
+                Document.DocumentType.ELECTRICAL,
+                Document.DocumentType.SOIL_TEST,
+                Document.DocumentType.PROFESSIONAL_LICENSE,
+            ],
+            self.Category.C: [
+                Document.DocumentType.ARCHITECTURAL,
+                Document.DocumentType.STRUCTURAL,
+                Document.DocumentType.SANITARY,
+                Document.DocumentType.ELECTRICAL,
+                Document.DocumentType.SOIL_TEST,
+                Document.DocumentType.PROFESSIONAL_LICENSE,
+                Document.DocumentType.FIRE_SAFETY,
+            ],
+        }
+        return mapping.get(self.building_category, [])
+
     def save(self, *args, **kwargs):
         if not self.building_category:
             self.building_category = self.auto_classify()
