@@ -21,6 +21,15 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
+    # Local apps
+    "accounts",
+    "applications",
+    "payments",
+    "reviews",
+    "inspections",
+    "permits",
+    "notifications",
+    "admin_config",
 ]
 
 MIDDLEWARE = [
