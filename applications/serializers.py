@@ -47,3 +47,48 @@ class ApplicationCreateSerializer(serializers.ModelSerializer):
             if instance.calculated_fee
             else None,
         }
+
+
+class ApplicationUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Application
+        fields = (
+            "intended_use",
+            "height_m",
+            "floors_above",
+            "floors_below",
+            "floor_area_sqm",
+            "plot_address",
+            "plot_gps_lat",
+            "plot_gps_lng",
+            "subcity_id",
+            "woreda",
+            "architect_name",
+            "architect_license",
+            "contractor_name",
+            "contractor_license",
+            "project_value_etb",
+        )
+        extra_kwargs = {f: {"required": False} for f in fields}
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.building_category = instance.auto_classify()
+        if instance.project_value_etb:
+            instance.calculated_fee = Application.calculate_fee(
+                instance.project_value_etb
+            )
+        instance.save()
+        return instance
+
+    def to_representation(self, instance):
+        return {
+            "application_id": str(instance.id),
+            "arn": instance.arn,
+            "status": instance.status,
+            "building_category": instance.building_category,
+            "calculated_fee": float(instance.calculated_fee)
+            if instance.calculated_fee
+            else None,
+        }

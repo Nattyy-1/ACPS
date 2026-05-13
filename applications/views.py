@@ -2,7 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from .serializers import ApplicationCreateSerializer
+from .serializers import ApplicationCreateSerializer, ApplicationUpdateSerializer
 from .models import Application
 from accounts.permissions import IsApplicant
 
@@ -33,3 +33,30 @@ class ApplicationFeeView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(app.get_fee_breakdown())
+
+
+class ApplicationUpdateView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+
+    ALLOWED_STATUSES = {"DRAFT", "REVISION_REQUIRED"}
+
+    def put(self, request, application_id):
+        try:
+            app = Application.objects.get(pk=application_id, applicant=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if app.status not in self.ALLOWED_STATUSES:
+            return Response(
+                {
+                    "detail": f"Application can only be updated when status is DRAFT or REVISION_REQUIRED. Current status: {app.status}."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = ApplicationUpdateSerializer(app, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

@@ -461,3 +461,149 @@ class ApplicationCreateAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         expected = float(5000000 / 2000 + 300)
         self.assertEqual(response.data["calculated_fee"], expected)
+
+
+class ApplicationUpdateAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.create_url = "/api/v1/applications/"
+        self.password = "pass123"
+        self.applicant = User.objects.create_user(
+            email="applicant@test.com",
+            full_name="Test Applicant",
+            phone="+251911111111",
+            password=self.password,
+            role=User.Role.APPLICANT,
+        )
+
+    def _auth(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "applicant@test.com", "password": self.password},
+            format="json",
+        )
+        return f"Bearer {response.data['access']}"
+
+    def _create_draft(self, overrides=None):
+        data = {
+            "intended_use": "Residential",
+            "height_m": 12.5,
+            "floors_above": 3,
+            "floors_below": 1,
+            "floor_area_sqm": 250.0,
+            "plot_address": "123 Main St",
+            "plot_gps_lat": 9.0300,
+            "plot_gps_lng": 38.7400,
+            "subcity_id": "SC-01",
+            "woreda": "Woreda 1",
+            "architect_name": "Arch A",
+            "architect_license": "AL-001",
+            "contractor_name": "Contractor C",
+            "contractor_license": "CL-001",
+            "project_value_etb": 1500000,
+        }
+        if overrides:
+            data.update(overrides)
+        response = self.client.post(
+            self.create_url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return response.data["application_id"]
+
+    def _update_url(self, app_id):
+        return f"/api/v1/applications/{app_id}/"
+
+    def test_update_draft_success(self):
+        app_id = self._create_draft()
+        data = {"intended_use": "Commercial", "height_m": 15.0}
+        response = self.client.put(
+            self._update_url(app_id),
+            data,
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "DRAFT")
+
+    def test_update_recalculates_category(self):
+        app_id = self._create_draft({"floors_above": 3})
+        data = {"floors_above": 5}
+        response = self.client.put(
+            self._update_url(app_id),
+            data,
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["building_category"], "C")
+
+    def test_update_recalculates_fee(self):
+        app_id = self._create_draft({"project_value_etb": 1500000})
+        data = {"project_value_etb": 3000000}
+        response = self.client.put(
+            self._update_url(app_id),
+            data,
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected = float(3000000 / 2000 + 300)
+        self.assertEqual(response.data["calculated_fee"], expected)
+
+    def test_update_revision_required_allowed(self):
+        app_id = self._create_draft()
+        Application.objects.filter(pk=app_id).update(
+            status=Application.Status.REVISION_REQUIRED
+        )
+        data = {"intended_use": "Updated"}
+        response = self.client.put(
+            self._update_url(app_id),
+            data,
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_update_blocked_for_submitted_status(self):
+        app_id = self._create_draft()
+        Application.objects.filter(pk=app_id).update(
+            status=Application.Status.PAYMENT_PENDING
+        )
+        data = {"intended_use": "Updated"}
+        response = self.client.put(
+            self._update_url(app_id),
+            data,
+            format="json",
+            HTTP_AUTHORIZATION=self._auth(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_blocked_for_wrong_owner(self):
+        other_user = User.objects.create_user(
+            email="other@test.com",
+            full_name="Other",
+            phone="+251933333333",
+            password="pass123",
+            role=User.Role.APPLICANT,
+        )
+        login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "other@test.com", "password": "pass123"},
+            format="json",
+        )
+        app_id = self._create_draft()
+        data = {"intended_use": "Commercial"}
+        response = self.client.put(
+            self._update_url(app_id),
+            data,
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_unauthenticated(self):
+        app_id = self._create_draft()
+        response = self.client.put(
+            self._update_url(app_id), {"intended_use": "X"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
