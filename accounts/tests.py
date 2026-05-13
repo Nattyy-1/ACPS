@@ -187,6 +187,45 @@ class LoginAPITests(TestCase):
         token = AccessToken(response.data["access"])
         self.assertEqual(token.payload.get("user_id"), str(self.user.id))
 
+    def test_login_logs_successful_attempt(self):
+        self.client.post(
+            self.url,
+            {"email": "login@example.com", "password": self.password},
+            format="json",
+        )
+        from .models import LoginAttemptLog
+
+        log = LoginAttemptLog.objects.last()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.email, "login@example.com")
+        self.assertTrue(log.success)
+
+    def test_login_logs_failed_attempt(self):
+        self.client.post(
+            self.url,
+            {"email": "login@example.com", "password": "wrongpassword"},
+            format="json",
+        )
+        from .models import LoginAttemptLog
+
+        log = LoginAttemptLog.objects.last()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.email, "login@example.com")
+        self.assertFalse(log.success)
+
+    def test_login_logs_nonexistent_email(self):
+        self.client.post(
+            self.url,
+            {"email": "ghost@example.com", "password": "somepass"},
+            format="json",
+        )
+        from .models import LoginAttemptLog
+
+        log = LoginAttemptLog.objects.last()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.email, "ghost@example.com")
+        self.assertFalse(log.success)
+
 
 class RefreshAPITests(TestCase):
     def setUp(self):

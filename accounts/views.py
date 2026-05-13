@@ -35,6 +35,19 @@ class RegisterView(APIView):
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
 
+    def post(self, request, *args, **kwargs):
+        from .models import LoginAttemptLog
+
+        email = request.data.get("email", "")
+        ip = request.META.get("REMOTE_ADDR", "")
+        try:
+            response = super().post(request, *args, **kwargs)
+        except Exception:
+            LoginAttemptLog.objects.create(email=email, ip_address=ip, success=False)
+            raise
+        LoginAttemptLog.objects.create(email=email, ip_address=ip, success=True)
+        return response
+
 
 class LogoutView(TokenBlacklistView):
     authentication_classes = [JWTAuthentication]
