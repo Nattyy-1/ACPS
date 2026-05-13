@@ -177,14 +177,31 @@ class VaultDocumentSerializer(serializers.Serializer):
     def create(self, validated_data):
         file = validated_data["file"]
         user = self.context["request"].user
+        document_type = validated_data["document_type"]
+
+        Document.objects.filter(
+            uploader=user,
+            document_type=document_type,
+            is_current=True,
+        ).update(is_current=False)
+
+        latest = (
+            Document.objects.filter(uploader=user, document_type=document_type)
+            .order_by("-version_number")
+            .first()
+        )
+        next_version = (latest.version_number + 1) if latest else 1
+
         doc = Document.objects.create(
             application=None,
             uploader=user,
-            document_type=validated_data["document_type"],
+            document_type=document_type,
             file_path=file,
             file_name=file.name,
             file_size_bytes=file.size,
             mime_type=file.content_type,
+            version_number=next_version,
+            is_current=True,
         )
         return doc
 

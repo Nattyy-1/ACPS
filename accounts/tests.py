@@ -15,6 +15,7 @@ from .permissions import (
     IsAdmin,
     IsAdminOrSeniorOfficer,
 )
+from applications.models import Document
 
 User = get_user_model()
 
@@ -1127,3 +1128,55 @@ class VaultDocumentUploadAPITests(TestCase):
             HTTP_AUTHORIZATION=self._auth_header(),
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_first_upload_creates_version_1(self):
+        response = self.client.post(
+            self.url,
+            {"file": self._valid_jpeg(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        doc = Document.objects.get(id=response.data["document_id"])
+        self.assertEqual(doc.version_number, 1)
+        self.assertTrue(doc.is_current)
+
+    def test_reupload_increments_version(self):
+        doc1_resp = self.client.post(
+            self.url,
+            {"file": self._valid_jpeg(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        doc2_resp = self.client.post(
+            self.url,
+            {"file": self._valid_png(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        doc1 = Document.objects.get(id=doc1_resp.data["document_id"])
+        doc2 = Document.objects.get(id=doc2_resp.data["document_id"])
+        self.assertFalse(doc1.is_current)
+        self.assertTrue(doc2.is_current)
+        self.assertEqual(doc1.version_number, 1)
+        self.assertEqual(doc2.version_number, 2)
+
+    def test_different_types_independent_versioning(self):
+        nat_resp = self.client.post(
+            self.url,
+            {"file": self._valid_jpeg(), "document_type": "NATIONAL_ID"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        tin_resp = self.client.post(
+            self.url,
+            {"file": self._valid_pdf(), "document_type": "TIN_CERTIFICATE"},
+            format="multipart",
+            HTTP_AUTHORIZATION=self._auth_header(),
+        )
+        nat = Document.objects.get(id=nat_resp.data["document_id"])
+        tin = Document.objects.get(id=tin_resp.data["document_id"])
+        self.assertTrue(nat.is_current)
+        self.assertTrue(tin.is_current)
+        self.assertEqual(nat.version_number, 1)
+        self.assertEqual(tin.version_number, 1)
