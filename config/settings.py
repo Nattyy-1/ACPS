@@ -114,7 +114,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "user": config("THROTTLE_USER", default="100/minute"),
-        "anon": config("THROTTLE_ANON", default="20/minute"),
+        "anon": config("THROTTLE_ANON", default="100/minute"),
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": config("PAGE_SIZE", default=20, cast=int),
@@ -131,6 +131,8 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = "accounts.User"
+
+PASSWORD_RESET_TIMEOUT = 1800
 
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",

@@ -28,3 +28,7 @@ class LoginSerializer(TokenObtainPairSerializer):
         data["role"] = self.user.role
         data["user_id"] = str(self.user.id)
         return data
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()

@@ -1,4 +1,5 @@
-from django.test import TestCase
+import django.core.mail
+from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from rest_framework import status
@@ -286,3 +287,47 @@ class LogoutAPITests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class ForgotPasswordAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/auth/forgot-password/"
+        self.user = User.objects.create_user(
+            email="forgot@example.com",
+            full_name="Forgot User",
+            phone="+251911111111",
+            password="testpass123",
+        )
+
+    def test_forgot_password_success(self):
+        response = self.client.post(
+            self.url, {"email": "forgot@example.com"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Password reset link sent to your email"
+        )
+        self.assertEqual(len(django.core.mail.outbox), 1)
+        self.assertIn("forgot@example.com", django.core.mail.outbox[0].to)
+
+    def test_forgot_password_nonexistent_email(self):
+        response = self.client.post(
+            self.url, {"email": "noone@example.com"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Password reset link sent to your email"
+        )
+        self.assertEqual(len(django.core.mail.outbox), 0)
+
+    def test_forgot_password_missing_email(self):
+        response = self.client.post(self.url, {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_forgot_password_email_contains_reset_link(self):
+        response = self.client.post(
+            self.url, {"email": "forgot@example.com"}, format="json"
+        )
+        self.assertIn("reset-password", django.core.mail.outbox[0].body)
+        self.assertIn("Password Reset", django.core.mail.outbox[0].subject)
