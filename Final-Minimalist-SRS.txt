@@ -1,0 +1,391 @@
+Software Requirements Specification
+Automated Construction Permit System — Ethiopian Construction Sector
+Version 1.0 | ASPM Group Project
+1. Introduction
+1.1 Purpose
+This document specifies the complete software requirements for the Automated Construction Permit System (ACPS) for the Ethiopian construction sector. It is intended to serve as the definitive reference for the development team during the implementation period and as supporting documentation for the project report submitted to the ASPM course instructor.
+1.2 Scope
+The system automates the end-to-end construction permit application, review, approval, inspection, and completion certification process currently handled manually by the Ministry of Urban Development and Construction (MUDC) and subcity-level building departments in Ethiopia. The system replaces paper forms, physical office visits, manual neighbor consent collection, and disconnected multi-office workflows with a unified web platform.
+The system is scoped to Addis Ababa subcity operations for the prototype phase, with the architecture designed to support multi-city expansion.
+1.3 Definitions
+ACPS — Automated Construction Permit System. MUDC — Ministry of Urban Development and Construction. ARN — Application Reference Number. SLA — Service Level Agreement. QR — Quick Response code. TIN — Tax Identification Number. DWG — AutoCAD drawing file format. PDF — Portable Document Format. JWT — JSON Web Token. RBAC — Role-Based Access Control.
+1.4 Project Constraints
+Budget: ETB 1,000,000. Team size: 5 members. Duration: 6 months. Technology stack: Django REST Framework (backend), React.js (frontend), PostgreSQL (database), local file storage (media folder), simple JWT authentication, ReportLab (PDF generation), qrcode (QR code generation). Deployment: Single Ubuntu 22.04 server, self-hosted.
+2. Overall System Description
+2.1 System Context
+The ACPS sits between three external parties: applicants (property owners, contractors, and developers), government officers (technical reviewers, inspectors, approving officers, and administrators), and external data systems (payment demonstration interface, email service). All interactions between these parties are mediated through the ACPS rather than happening directly.
+2.2 User Classes
+There are five user classes in the system.
+The Applicant is a property owner, developer, or their authorized representative. They can register, submit applications, upload documents, demonstrate the payment process, track status, receive email notifications, communicate with reviewers, and download permits and certificates.
+The Technical Review Officer is a subcity building department staff member. They receive assigned applications, review technical drawings, log comments, request revisions, and approve or reject plans within the system.
+The Site Inspector is a field officer. They receive inspection assignments on their responsive web interface, conduct inspections using digital checklists, upload photos, and record pass or fail outcomes.
+The Senior Approving Officer is a supervisor-level government official. They perform final approval actions on applications that have passed technical review, issue planning consents, and authorize permit generation.
+The System Administrator manages the platform configuration including user accounts, building category rules, fee schedules, SLA thresholds, notification templates, and system health monitoring.
+2.3 Operating Environment
+The web application runs in any modern browser on desktop and mobile. The inspector interface is a responsive web application optimized for tablet browsers, given the need for field use. The backend runs on a single Linux server. All file storage is handled by the local media folder. Email delivery uses Django's send_mail() with console backend for demonstration and SMTP for production.
+2.4 Assumptions
+Every applicant has access to a smartphone or computer with internet connectivity. Every applicant has a valid national ID or passport. Every neighboring plot owner can provide a signed consent form that the applicant scans and uploads. All government officers have access to a computer with internet connectivity. Payment processing is demonstrated within the system without live gateway integration.
+3. Functional Requirements
+3.1 Module 1 — Authentication and User Management
+FR-1.1 The system shall allow new applicants to self-register using full name, phone number, email address, and password. Account activation is immediate upon registration.
+FR-1.2 The system shall support login using email and password. Successful login returns a JWT access token and a refresh token. Access tokens expire after 60 minutes. Refresh tokens expire after 7 days.
+FR-1.3 The system shall enforce role-based access control. The five roles are: APPLICANT, REVIEW_OFFICER, INSPECTOR, SENIOR_OFFICER, and ADMIN. Each role has a defined set of permitted API endpoints. Any request to a restricted endpoint from an unauthorized role returns HTTP 403.
+FR-1.4 The system shall allow applicants to reset their password via a time-limited link sent to their registered email address. The reset link expires after 30 minutes.
+FR-1.5 Administrators shall be able to create, deactivate, and reassign government officer accounts. Applicant accounts are self-created. Officer accounts are created only by administrators.
+FR-1.6 The system shall log every login attempt — successful or failed — with timestamp, IP address, and user identifier.
+3.2 Module 2 — Applicant Profile and Document Vault
+FR-2.1 After account creation, the applicant completes their profile by uploading a national ID or passport scan. The system validates that the uploaded file is a JPEG, PNG, or PDF, is under 5MB, and is not blank.
+FR-2.2 The applicant enters their land holding certificate number. The system stores the certificate number for administrative verification.
+FR-2.3 The applicant enters their TIN. The system validates TIN format against the Ethiopian Revenue and Customs Authority 10-digit format.
+FR-2.4 The system creates a personal document vault for each applicant where all uploaded documents are stored. When a document is re-uploaded after a rejection, the old version is retained and the new version is marked as current.
+FR-2.5 The applicant can view the status of each stored document: Pending Review, Accepted, or Rejected with reason.
+3.3 Module 3 — Application Submission
+FR-3.1 An authenticated applicant can initiate a new permit application from their dashboard. The system creates an application record with a system-generated ARN in the format ACPS-YYYY-XXXXXX where YYYY is the year and XXXXXX is a zero-padded sequential number.
+FR-3.2 The application form collects the following fields: building category selection, intended building use, building height in meters, number of floors above ground, number of floors below ground, total floor area in square meters, plot address including subcity and woreda, GPS coordinates of the plot, full name and license number of the registered architect, full name and license number of the registered contractor, and estimated project value in ETB.
+FR-3.3 Building category is auto-classified by the system based on entered specs. Category A is a single-story building with a span of 7 meters or less. Category B is multi-story or larger single-story buildings. Category C is Category B buildings requiring fire safety systems. The system displays the determined category to the applicant before they proceed.
+FR-3.4 The system auto-calculates the permit fee as follows: for projects under ETB 2,500,000 the fee is 1/2000 of the project estimate plus a fixed ETB 300 planning consent fee. For projects above ETB 2,500,000 the system applies the tiered fee schedule defined by the administrator. The calculated fee is displayed to the applicant before submission and stored immutably on the application record.
+FR-3.5 The document upload section displays a dynamic checklist based on building category. For Category A: architectural drawings and ID proof. For Category B: architectural drawings, structural drawings, sanitary design, electrical design, soil test report, and design professional license copy. For Category C: all Category B documents plus fire safety plans.
+FR-3.6 Each uploaded document is validated: file type must be PDF or DWG, file size must not exceed 20MB, and file must not be blank (zero bytes). Failed validation is reported immediately with a specific error message.
+FR-3.7 The applicant can save a draft application and return to it. Draft applications are retained for 30 days before automatic deletion with a prior notification.
+FR-3.8 On final submission, the system runs a completeness check confirming all required documents for the building category are present and accepted. If any document is missing, submission is blocked and the missing items are listed. If all documents pass, the application status changes to PAYMENT_PENDING.
+3.4 Module 4 — Neighbor Consent
+FR-4.1 The applicant manually enters neighbor information for each adjacent plot owner. Required fields: neighbor full name, neighbor phone number, and upload of signed consent form scan.
+FR-4.2 The system stores neighbor records linked to the application. Each neighbor record includes name, phone, consent file path, and status.
+FR-4.3 The applicant must add at least one neighbor record before submission. The system validates that all neighbor records have uploaded consent files.
+FR-4.4 The administrator can view neighbor records during review and verify the authenticity of uploaded consent forms.
+FR-4.5 The applicant's dashboard displays the neighbor panel showing how many neighbors were added and the status of each consent upload.
+3.5 Module 5 — Payment Demonstration
+FR-5.1 The system generates a payment invoice linked to the ARN showing the calculated fee, applicable breakdown, and available payment methods.
+FR-5.2 The system presents a payment demonstration interface with three options: Telebirr, CBE Birr, and Bank Transfer.
+FR-5.3 When the applicant selects Telebirr or CBE Birr, the system displays a payment processing simulation for 3 seconds, then auto-confirms the payment and generates a receipt.
+FR-5.4 When the applicant selects Bank Transfer, the system provides bank account details and instructs the applicant to upload a payment receipt photo. An administrator manually confirms the payment and marks it as received. The application does not advance until confirmation.
+FR-5.5 On successful payment confirmation from any method, the system generates a PDF receipt with the ARN, payment amount, payment method, transaction reference number, and timestamp. The receipt is stored in the applicant's vault and emailed to the applicant. The application status changes to AWAITING_ASSIGNMENT.
+FR-5.6 If payment is not completed within 48 hours of the invoice being generated, the system sends a reminder email. If payment is not completed within 7 days, the application status changes to PAYMENT_EXPIRED and the applicant must restart from the payment step.
+3.6 Module 6 — Technical Review
+FR-6.1 Once payment is confirmed, the system automatically assigns the application to an available Technical Review Officer. Assignment uses a round-robin algorithm weighted by current active review count per officer. The officer's dashboard is updated immediately.
+FR-6.2 The review officer accesses a review workspace for the application. The workspace shows: all submitted documents as download links, the applicant's form data, neighbor notification outcomes, and a comment panel.
+FR-6.3 The review officer can add a comment linked to any specific document. Comments must include a category selected from a predefined list: Missing Information, Drawing Error, Code Non-Compliance, Clarification Needed, or Other. Comments are timestamped and attributed to the officer.
+FR-6.4 When comments are submitted, the application status changes to REVISION_REQUIRED. The applicant receives an email notification listing the number of comments and a link to the review workspace where they can view each comment and upload revised documents.
+FR-6.5 When the applicant uploads a revision, the review officer receives a notification. The officer can mark each comment as Resolved or Escalated.
+FR-6.6 The system tracks the number of revision cycles. If an application exceeds 3 revision cycles without approval, the system notifies the Senior Approving Officer for oversight.
+FR-6.7 The review officer can mark the technical review as APPROVED or REJECTED. Rejection requires a written reason of at least 100 characters and a citation of the relevant article of Building Proclamation 624/2009 or Regulation 243/2011. Approval advances the application to AWAITING_SENIOR_APPROVAL.
+FR-6.8 SLA timers run from the moment an application is assigned to a review officer. The target review completion time is 10 working days. At 7 working days with no decision, the system sends a reminder to the review officer. At 10 working days with no decision, the system sends an escalation alert to the Senior Approving Officer and the administrator.
+3.7 Module 7 — Planning Consent and Permit Issuance
+FR-7.1 The Senior Approving Officer receives applications in AWAITING_SENIOR_APPROVAL status in their dashboard. They can view the complete application, all documents, all review comments, and the review officer's recommendation.
+FR-7.2 The Senior Officer can issue planning consent, reject the application, or send it back to the review officer with instructions.
+FR-7.3 When planning consent is issued, the system auto-generates a Planning Consent PDF. The document contains: ARN, applicant name, plot address, building category, approved building specifications, consent issue date, expiry date set at 6 months from issue, and a QR code that resolves to a public verification URL. The document includes a static signature image of the issuing officer.
+FR-7.4 The planning consent PDF is emailed to the applicant, stored in their vault, and linked to the application record. The application status changes to CONSENT_ISSUED.
+FR-7.5 The Senior Officer then issues the Construction Permit as a second action. The Construction Permit PDF contains: ARN, permit number in the format CP-YYYY-XXXXXX, applicant name, plot details, approved building category and specifications, conditions of approval, permit issue date, permit expiry date set at 12 months from issue, the name of the approved contractor, and a QR code. The document includes a static signature image of the issuing officer.
+FR-7.6 The QR code on both documents resolves to a public verification page at a URL in the format /verify/{permit-number} that displays permit validity status, issue date, and expiry date without requiring any login.
+FR-7.7 The Construction Permit is delivered to the applicant by email. The application status changes to PERMIT_ISSUED. A record is written to the permits registry table in the database.
+3.8 Module 8 — Construction Commencement and Inspection Scheduling
+FR-8.1 After receiving their permit, the applicant submits a Commencement Notification through the portal before breaking ground. The form captures: actual start date, contractor name, contractor license number, and site supervisor mobile number.
+FR-8.2 The system stores the contractor license number for administrative verification.
+FR-8.3 On acceptance of the commencement notification, the system auto-schedules inspection milestones based on building category. For Category B buildings the default milestones are: Foundation Inspection (scheduled 14 days after commencement), Structural Frame Inspection (scheduled 60 days after commencement), and Final Completion Inspection (triggered by applicant on completion). For Category A buildings only the Foundation Inspection and Final Completion Inspection apply.
+FR-8.4 The system assigns each scheduled inspection to an available inspector using the same round-robin algorithm as review officer assignment.
+FR-8.5 The inspector receives an email notification 48 hours before each scheduled inspection showing: the site address, GPS coordinates, the ARN, the permit number, the inspection type, and the applicant's site supervisor contact number.
+FR-8.6 The applicant receives an email notification 48 hours before each inspection showing the inspection type, the expected date, and the inspector's name.
+3.9 Module 9 — Digital Site Inspection
+FR-9.1 The inspector uses the responsive web inspection interface. On the day of inspection, they open the assigned inspection record and click Start Inspection. The system records the start timestamp.
+FR-9.2 The inspection interface presents a structured checklist. Each checklist item has a Pass, Fail, or N/A option. Each item also has a notes field. Checklist content is configurable by the administrator per inspection type.
+FR-9.3 The inspector must upload a minimum of 3 photographs per inspection. Photographs are uploaded through the web interface. Each photo is automatically timestamped by the system.
+FR-9.4 On completing the checklist, the inspector selects an overall outcome: PASSED or FAILED. If FAILED, the inspector must add a summary of failures of at least 50 characters.
+FR-9.5 The inspector submits the inspection record. The system timestamps the submission and locks the record from further editing.
+FR-9.6 If the inspection PASSES, the applicant receives an email notification confirming the outcome. The inspection milestone is marked complete. The next scheduled inspection milestone becomes active.
+FR-9.7 If the inspection FAILS, the applicant receives an email notification with the failure summary. The system creates a Re-Inspection record. The applicant must mark corrections as complete through the portal before a re-inspection is scheduled. Re-inspections follow the same process as original inspections.
+3.10 Module 10 — Completion Certificate
+FR-10.1 When construction is complete, the applicant submits a Completion Declaration through the portal. The declaration requires: a statement that construction is complete, the actual completion date, and a minimum of 5 photographs of the completed structure taken from at least 4 different angles.
+FR-10.2 The system schedules a Final Completion Inspection within 7 working days of the declaration.
+FR-10.3 If the completion inspection PASSES, the Senior Approving Officer is notified for final sign-off.
+FR-10.4 The Senior Officer reviews the inspection report and photographs, compares the completed structure against the approved plans, and approves or flags discrepancies.
+FR-10.5 On approval, the system auto-generates the Completion Certificate PDF containing: ARN, permit number, completion certificate number in the format CC-YYYY-XXXXXX, applicant name, plot details, final building specifications as built, completion date, issue date, and QR code. The certificate is stored in the applicant's vault, emailed to the applicant, and the application status changes to COMPLETED.
+3.11 Module 12 — Dashboards and Reporting
+FR-12.1 The applicant dashboard shows: all active and past applications with their current status, a timeline view of each application showing every stage and the date it was completed, outstanding actions required from the applicant, and recent notifications.
+FR-12.2 The review officer dashboard shows: applications assigned to them sorted by SLA urgency, applications awaiting revision upload from applicants, completed reviews, and personal performance metrics.
+FR-12.3 The inspector dashboard shows: upcoming scheduled inspections with countdown, past inspections with outcomes, and a map view of inspection locations.
+FR-12.4 The Senior Officer dashboard shows: applications awaiting final approval, applications flagged for excess revision cycles, recently issued permits, and department-wide processing time metrics.
+FR-12.5 The administrator dashboard shows: system-wide statistics including total applications by status, average processing time per stage, SLA breach counts per officer, payment volumes, and a log of all system events. All reports are exportable as CSV.
+4. Complete API Endpoint Specification
+All endpoints are prefixed with /api/v1/. All requests and responses use JSON unless specified otherwise. All protected endpoints require a valid JWT in the Authorization header as Bearer {token}. Roles listed under each endpoint are the only roles permitted to call it.
+4.1 Authentication Endpoints
+POST /auth/register
+Roles: Public.
+Request body: { "full_name", "phone", "email", "password" }.
+Response: { "message": "Account created", "user_id" }.
+POST /auth/login
+Roles: Public.
+Request body: { "email", "password" }.
+Response: { "access_token", "refresh_token", "role", "user_id" }.
+POST /auth/refresh
+Roles: Public.
+Request body: { "refresh_token" }.
+Response: { "access_token" }.
+POST /auth/logout
+Roles: All authenticated.
+Invalidates the current refresh token.
+POST /auth/forgot-password
+Roles: Public.
+Request body: { "email" }.
+Sends a password reset link to the email.
+POST /auth/reset-password
+Roles: Public.
+Request body: { "token", "new_password" }.
+Validates token and updates password.
+4.2 User and Profile Endpoints
+GET /users/me
+Roles: All authenticated.
+Returns the current user's profile.
+PUT /users/me
+Roles: All authenticated.
+Request body: updatable profile fields.
+Updates profile data.
+POST /users/me/documents
+Roles: APPLICANT.
+Multipart form upload. Accepts national ID, passport, TIN certificate.
+Triggers automated document validation.
+Response: { "document_id", "status", "validation_result" }.
+GET /users/me/documents
+Roles: APPLICANT.
+Returns all documents in the applicant's vault with status.
+GET /users/{user_id}
+Roles: ADMIN.
+Returns full user profile.
+GET /users
+Roles: ADMIN.
+Query params: role, status, page, page_size.
+Returns paginated user list.
+POST /users
+Roles: ADMIN.
+Creates a government officer account.
+Request body: { "full_name", "email", "phone", "role", "subcity_id" }.
+PUT /users/{user_id}/deactivate
+Roles: ADMIN.
+Deactivates a user account.
+4.3 Application Endpoints
+POST /applications
+Roles: APPLICANT.
+Creates a new application record. Returns ARN and application_id.
+Request body: { "building_category", "intended_use", "height_m", "floors_above", "floors_below", "floor_area_sqm", "plot_address", "plot_gps_lat", "plot_gps_lng", "subcity_id", "woreda", "architect_name", "architect_license", "contractor_name", "contractor_license", "project_value_etb" }.
+Response: { "application_id", "arn", "status": "DRAFT", "calculated_fee" }.
+GET /applications
+Roles: APPLICANT (own only), REVIEW_OFFICER (assigned only), SENIOR_OFFICER (all), ADMIN (all).
+Query params: status, category, subcity_id, page, page_size.
+Returns paginated application list.
+GET /applications/{application_id}
+Roles: APPLICANT (own), REVIEW_OFFICER (assigned), SENIOR_OFFICER, ADMIN.
+Returns full application detail including all linked documents, comments, inspections, and status history.
+PUT /applications/{application_id}
+Roles: APPLICANT.
+Allowed only when status is DRAFT or REVISION_REQUIRED.
+Updates application fields and re-triggers completeness validation.
+POST /applications/{application_id}/submit
+Roles: APPLICANT.
+Triggers final completeness check and moves status to PAYMENT_PENDING if passed.
+Response: { "status", "missing_documents": [], "invoice_id" }.
+POST /applications/{application_id}/documents
+Roles: APPLICANT.
+Multipart upload. Associates a document with the application.
+Request params: document_type — one of ARCHITECTURAL, STRUCTURAL, SANITARY, ELECTRICAL, SOIL_TEST, PROFESSIONAL_LICENSE, FIRE_SAFETY.
+Response: { "document_id", "application_id", "document_type", "validation_status" }.
+DELETE /applications/{application_id}/documents/{document_id}
+Roles: APPLICANT.
+Removes a document from a DRAFT application.
+GET /applications/{application_id}/timeline
+Roles: APPLICANT, REVIEW_OFFICER (assigned), SENIOR_OFFICER, ADMIN.
+Returns the full status history of the application with timestamps and actor names.
+GET /applications/{application_id}/fee
+Roles: APPLICANT.
+Returns the calculated fee breakdown for the application.
+4.4 Neighbor Consent Endpoints
+POST /applications/{application_id}/neighbors
+Roles: APPLICANT.
+Request body: { "neighbor_name", "neighbor_phone", "consent_file" }.
+Creates neighbor record with uploaded consent scan.
+Response: { "neighbor_id", "status": "UPLOADED" }.
+GET /applications/{application_id}/neighbors
+Roles: APPLICANT (own), REVIEW_OFFICER (assigned), SENIOR_OFFICER, ADMIN.
+Returns list of neighbor records with name, phone, consent file status.
+DELETE /applications/{application_id}/neighbors/{neighbor_id}
+Roles: APPLICANT.
+Removes a neighbor record from a DRAFT application.
+4.5 Payment Endpoints
+POST /payments/invoices/{invoice_id}/pay
+Roles: APPLICANT.
+Initiates payment demonstration. Request body: { "method": "TELEBIRR | CBEBIRR | BANK_TRANSFER" }.
+For Telebirr/CBE Birr: simulates processing and auto-confirms.
+For Bank Transfer: sets status to AWAITING_MANUAL_CONFIRMATION.
+Response: { "status", "receipt_id" }.
+POST /payments/invoices/{invoice_id}/bank-receipt
+Roles: APPLICANT.
+Multipart upload. Submits bank transfer receipt photo.
+Sets invoice status to AWAITING_MANUAL_CONFIRMATION.
+PUT /payments/invoices/{invoice_id}/confirm
+Roles: ADMIN.
+Manually confirms a bank transfer payment.
+Triggers application status update to AWAITING_ASSIGNMENT and receipt generation.
+GET /payments/receipts/{receipt_id}
+Roles: APPLICANT (own), ADMIN.
+Returns receipt PDF as a file download.
+GET /payments
+Roles: ADMIN.
+Query params: status, method, date_from, date_to, page, page_size.
+Returns paginated payment records.
+4.6 Technical Review Endpoints
+POST /applications/{application_id}/assign-reviewer
+Roles: System (called internally), ADMIN (for manual reassignment).
+Assigns a REVIEW_OFFICER using round-robin algorithm.
+Returns { "assigned_officer_id", "assigned_at" }.
+GET /reviews/my-queue
+Roles: REVIEW_OFFICER.
+Returns all applications currently assigned to the calling officer sorted by SLA urgency.
+POST /applications/{application_id}/comments
+Roles: REVIEW_OFFICER (assigned).
+Request body: { "document_id", "category": "MISSING_INFO | DRAWING_ERROR | CODE_NON_COMPLIANCE | CLARIFICATION | OTHER", "content" }.
+Creates a comment and sets application status to REVISION_REQUIRED if not already set.
+Triggers applicant notification.
+GET /applications/{application_id}/comments
+Roles: APPLICANT (own), REVIEW_OFFICER (assigned), SENIOR_OFFICER, ADMIN.
+Returns all comments with author, category, timestamp, and resolution status.
+PUT /applications/{application_id}/comments/{comment_id}/resolve
+Roles: REVIEW_OFFICER (assigned).
+Marks a comment as RESOLVED or ESCALATED.
+POST /applications/{application_id}/review-decision
+Roles: REVIEW_OFFICER (assigned).
+Request body: { "decision": "APPROVED | REJECTED", "notes" }.
+REJECTED requires notes of at least 100 characters and a regulation_citation field.
+On APPROVED: sets status to AWAITING_SENIOR_APPROVAL and notifies Senior Officer.
+On REJECTED: sets status to REJECTED, notifies applicant with reason.
+GET /reviews/sla-status
+Roles: SENIOR_OFFICER, ADMIN.
+Returns all active reviews with days elapsed, days remaining to SLA, and assigned officer.
+4.7 Permit Issuance Endpoints
+GET /approvals/queue
+Roles: SENIOR_OFFICER.
+Returns applications in AWAITING_SENIOR_APPROVAL status.
+POST /applications/{application_id}/issue-consent
+Roles: SENIOR_OFFICER.
+Triggers planning consent PDF generation with static signature image. Stores document. Updates status to CONSENT_ISSUED.
+Response: { "consent_document_id", "consent_pdf_url" }.
+POST /applications/{application_id}/issue-permit
+Roles: SENIOR_OFFICER.
+Triggers construction permit PDF generation with QR code and static signature image. Stores document.
+Updates status to PERMIT_ISSUED. Creates record in permits registry table.
+Response: { "permit_id", "permit_number", "permit_pdf_url" }.
+POST /applications/{application_id}/reject-final
+Roles: SENIOR_OFFICER.
+Rejects the application at senior review stage.
+Request body: { "reason", "regulation_citations": [] }.
+GET /permits/{permit_number}
+Roles: All authenticated, Public (read-only fields only).
+Returns permit details. For public callers: validity status, issue date, expiry date, building address only.
+GET /verify/{permit_number}
+Roles: Public.
+QR code resolution endpoint. Returns a human-readable HTML page showing permit validity.
+4.8 Commencement and Inspection Endpoints
+POST /applications/{application_id}/commence
+Roles: APPLICANT.
+Request body: { "start_date", "contractor_name", "contractor_license", "supervisor_name", "supervisor_phone" }.
+Stores contractor details for administrative verification.
+On success: sets status to UNDER_CONSTRUCTION, auto-schedules inspection milestones.
+Response: { "commencement_id", "scheduled_inspections": [] }.
+GET /applications/{application_id}/inspections
+Roles: APPLICANT (own), INSPECTOR (assigned), SENIOR_OFFICER, ADMIN.
+Returns all inspection records for the application with type, scheduled date, assigned inspector, and outcome.
+GET /inspections/my-schedule
+Roles: INSPECTOR.
+Returns upcoming assigned inspections sorted by date with site details and GPS.
+POST /inspections/{inspection_id}/start
+Roles: INSPECTOR.
+Records inspection start timestamp.
+Sets inspection status to IN_PROGRESS.
+PUT /inspections/{inspection_id}/checklist
+Roles: INSPECTOR.
+Request body: { "items": [ { "item_id", "result": "PASS | FAIL | NA", "notes" } ] }.
+Updates checklist responses. Can be called multiple times before submission.
+POST /inspections/{inspection_id}/photos
+Roles: INSPECTOR.
+Multipart upload. Accepts JPEG or PNG up to 10MB each. Minimum 3 photos required before submission.
+Stores photo with auto-extracted timestamp.
+POST /inspections/{inspection_id}/submit
+Roles: INSPECTOR.
+Request body: { "overall_result": "PASSED | FAILED", "failure_summary" }.
+FAILED requires failure_summary of at least 50 characters.
+Locks inspection record. Notifies applicant. Triggers next milestone activation if PASSED.
+POST /applications/{application_id}/inspections/{inspection_id}/request-reinspection
+Roles: APPLICANT.
+Allowed only when inspection status is FAILED.
+Request body: { "corrections_made": description of corrections }.
+Schedules a new re-inspection record.
+4.9 Completion Certificate Endpoints
+POST /applications/{application_id}/declare-completion
+Roles: APPLICANT.
+Request body: { "completion_date" } plus minimum 5 photo uploads via multipart.
+Schedules Final Completion Inspection. Sets status to COMPLETION_DECLARED.
+POST /applications/{application_id}/issue-completion-certificate
+Roles: SENIOR_OFFICER.
+Allowed only when final inspection PASSED and senior has reviewed.
+Generates Completion Certificate PDF with QR code and static signature image.
+Sets status to COMPLETED. Archives permit record.
+Response: { "certificate_id", "certificate_number", "certificate_pdf_url" }.
+4.10 Notification Endpoints
+GET /notifications
+Roles: All authenticated.
+Returns the calling user's notifications sorted by newest first.
+Query params: unread_only, page, page_size.
+PUT /notifications/{notification_id}/read
+Roles: All authenticated.
+Marks a notification as read.
+PUT /notifications/read-all
+Roles: All authenticated.
+Marks all notifications as read.
+4.11 Administration and Configuration Endpoints
+GET /admin/stats
+Roles: ADMIN, SENIOR_OFFICER.
+Returns system-wide statistics: total applications by status, average days per stage, SLA breach counts, payment totals.
+GET /admin/audit-log
+Roles: ADMIN.
+Query params: user_id, action_type, date_from, date_to, page, page_size.
+Returns system audit log from application_history.
+PUT /admin/config/fee-schedule
+Roles: ADMIN.
+Updates the fee calculation schedule.
+PUT /admin/config/sla-thresholds
+Roles: ADMIN.
+Updates SLA day thresholds per stage.
+PUT /admin/config/inspection-checklists/{inspection_type}
+Roles: ADMIN.
+Updates the checklist items for a given inspection type.
+POST /admin/config/notification-templates
+Roles: ADMIN.
+Creates or updates email notification templates.
+GET /admin/reports/export
+Roles: ADMIN.
+Query params: report_type, date_from, date_to, format (csv).
+Returns a downloadable report file.
+4.12 External Integration Endpoints (Internal Use Only)
+POST /integrations/email/send
+Internal. Called by notification service.
+Request body: { "to_email", "subject", "body_html" }.
+Calls configured SMTP server or console backend.
+5. Non-Functional Requirements
+NFR-1 Performance. API responses for read operations must complete within 500ms under normal load. File upload validation must complete within 3 seconds. PDF generation must complete within 10 seconds.
+NFR-2 Availability. The system must target 99% uptime during government working hours (Monday to Friday, 8am to 6pm EAT). Scheduled maintenance must occur outside these hours.
+NFR-3 Security. All data in transit must use HTTPS with TLS 1.2 or higher. All passwords must be hashed using bcrypt with a minimum cost factor of 12. All uploaded documents must be stored with appropriate file permissions. JWT tokens must be signed with HS256. API rate limiting must be applied: 100 requests per minute per authenticated user, 20 requests per minute for public endpoints.
+NFR-4 Data Integrity. All financial transactions must be wrapped in database transactions. Payment records must never be deletable — only archivable. Application records must never be physically deleted — status changes to CANCELLED or ARCHIVED.
+NFR-5 Accessibility. The web interface must meet WCAG 2.1 Level AA. All forms must be keyboard-navigable. All error messages must be in both English and Amharic.
+NFR-6 Scalability. The database schema must support multi-subcity deployment through a subcity_id field on all relevant tables. The system must support at least 500 concurrent users without degradation.
+NFR-7 Auditability. Every state change on an application must write a record to the application_history table with the previous status, new status, actor user_id, timestamp, and an optional note. This log must be immutable.
+6. Database Schema (Key Tables)
+The database has the following primary tables. Each table has an id UUID primary key, created_at timestamp, and updated_at timestamp on all records.
+users — id, full_name, email, phone, password_hash, role, status, subcity_id, created_at.
+applications — id, arn, applicant_id (FK users), building_category, status, subcity_id, woreda, plot_address, plot_gps_lat, plot_gps_lng, height_m, floors_above, floors_below, floor_area_sqm, intended_use, architect_name, architect_license, contractor_name, contractor_license, project_value_etb, calculated_fee, assigned_officer_id (FK users), created_at.
+documents — id, application_id (FK applications), uploader_id (FK users), document_type, file_path, file_name, file_size_bytes, mime_type, validation_status, rejection_reason, version_number, is_current, created_at.
+application_history — id, application_id (FK applications), previous_status, new_status, actor_id (FK users), note, created_at. Immutable — no UPDATE or DELETE permitted.
+payments — id, application_id (FK applications), invoice_id, amount_etb, payment_method, transaction_reference, status, paid_at, confirmed_by_id (FK users), receipt_path, created_at.
+neighbor_consents — id, application_id (FK applications), neighbor_name, neighbor_phone, consent_file_path, status, created_at.
+review_comments — id, application_id (FK applications), document_id (FK documents), author_id (FK users), category, content, resolution_status, resolved_by_id, resolved_at, created_at.
+inspections — id, application_id (FK applications), inspection_type, scheduled_date, assigned_inspector_id (FK users), status, start_timestamp, overall_result, failure_summary, submitted_at.
+inspection_checklist_items — id, inspection_id (FK inspections), item_template_id, item_text, result, notes.
+inspection_photos — id, inspection_id (FK inspections), file_path, taken_at.
+permits — id, application_id (FK applications), permit_number, permit_type (CONSTRUCTION or COMPLETION), issued_by_id (FK users), issue_date, expiry_date, status, document_path, qr_code_token, created_at.
+notifications — id, recipient_id (FK users), title, body, notification_type, reference_id, reference_type, is_read, created_at.

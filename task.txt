@@ -1,0 +1,511 @@
+﻿User:
+• user_pasted_clipboard_long_content_as_file_Software Requirement.txt
+• user_pasted_clipboard_long_content_as_file_## ADJUSTED MINIMALI.txt
+okay so i want you to genrate based on that srs a specific and clear task breakdown that i can follow literally one after the other so that i cover the full srs and is fully alligned. like i want something that i can follow one after the other. respond in text
+
+Kimi:
+Below is a literal, step-by-step task breakdown aligned to every Functional Requirement (FR), API endpoint, and Non-Functional Requirement (NFR) in the SRS. Follow them in order. Note: Every task that changes an application status must also write an immutable record to the application_history table.
+
+PHASE 1: PROJECT SETUP & INFRASTRUCTURE
+1. Initialize Django project with Django REST Framework, PostgreSQL adapter (psycopg2), and environment variable support.
+
+2. Initialize React.js frontend with React Router, Axios, and a CSS framework (e.g., Tailwind or Bootstrap).
+
+3. Configure Django settings.py for PostgreSQL connection, MEDIA_ROOT, and MEDIA_URL for local file storage.
+
+4. Install and configure djangorestframework-simplejwt with access token lifetime of 60 minutes and refresh token lifetime of 7 days.
+
+5. Install and configure django-cors-headers to allow frontend communication.
+
+6. Install reportlab and qrcode Python libraries for PDF and QR generation.
+
+7. Configure Django email backend: use console backend for demo/development, SMTP settings ready for production.
+
+8. Create Django apps: accounts, applications, payments, reviews, inspections, permits, notifications, admin_config.
+
+9. Set up React folder structure: pages/, components/, services/api.js, utils/, hooks/.
+
+10. Create a base Axios interceptor in React that attaches JWT Authorization: Bearer headers and handles 401 refresh logic.
+
+PHASE 2: DATABASE MODELS (ALL TABLES) [SRS §6]
+11. Create custom User model extending AbstractUser with fields: full_name, phone, role (choices: APPLICANT, REVIEW_OFFICER, INSPECTOR, SENIOR_OFFICER, ADMIN), status, subcity_id.
+
+12. Create Application model with all fields from SRS §6 including arn, applicant_id (FK), building_category, status, all building spec fields, project_value_etb, calculated_fee, assigned_officer_id (FK).
+
+13. Create Document model with: application_id (FK), uploader_id (FK), document_type, file_path, file_name, file_size_bytes, mime_type, validation_status, rejection_reason, version_number, is_current.
+
+14. Create ApplicationHistory model with: application_id (FK), previous_status, new_status, actor_id (FK), note. Configure Django Admin to disallow edit/delete to enforce immutability.
+
+15. Create Payment model with: application_id (FK), invoice_id, amount_etb, payment_method, transaction_reference, status, paid_at, confirmed_by_id (FK), receipt_path.
+
+16. Create NeighborConsent model with: application_id (FK), neighbor_name, neighbor_phone, consent_file_path, status.
+
+17. Create ReviewComment model with: application_id (FK), document_id (FK), author_id (FK), category, content, resolution_status, resolved_by_id, resolved_at.
+
+18. Create Inspection model with: application_id (FK), inspection_type, scheduled_date, assigned_inspector_id (FK), status, start_timestamp, overall_result, failure_summary, submitted_at.
+
+19. Create InspectionChecklistItem model with: inspection_id (FK), item_template_id, item_text, result, notes.
+
+20. Create InspectionPhoto model with: inspection_id (FK), file_path, taken_at.
+
+21. Create Permit model with: application_id (FK), permit_number, permit_type (CONSTRUCTION or COMPLETION), issued_by_id (FK), issue_date, expiry_date, status, document_path, qr_code_token.
+
+22. Create Notification model with: recipient_id (FK), title, body, notification_type, reference_id, reference_type, is_read.
+
+23. Create FeeSchedule and SLAConfig models for admin-configurable tiered fees and SLA thresholds.
+
+24. Run makemigrations and migrate; verify all tables exist in PostgreSQL.
+
+25. Register all models in Django Admin with list displays, filters, and read-only fields where required.
+
+PHASE 3: AUTHENTICATION & USER MANAGEMENT BACKEND [FR-1.1 - FR-1.6, §4.1]
+26. Implement POST /auth/register/ endpoint: accept full_name, phone, email, password; create active account immediately; return user_id. [FR-1.1]
+
+27. Implement POST /auth/login/ endpoint: validate credentials; return access_token, refresh_token, role, user_id. [FR-1.2]
+
+28. Implement POST /auth/refresh/ endpoint: accept refresh_token; return new access_token. [FR-1.2]
+
+29. Implement POST /auth/logout/ endpoint: blacklist/invalidate the current refresh token. [§4.1]
+
+30. Implement POST /auth/forgot-password/ endpoint: generate time-limited token (30 minutes); send reset link via email. [FR-1.4]
+
+31. Implement POST /auth/reset-password/ endpoint: validate token; update password; return success message. [FR-1.4]
+
+32. Configure Django to use bcrypt hasher with minimum cost factor of 12. [NFR-3]
+
+33. Create custom Django permission classes for each role (IsApplicant, IsReviewOfficer, IsInspector, IsSeniorOfficer, IsAdmin). [FR-1.3]
+
+34. Apply role permission classes to all protected endpoints so unauthorized roles receive HTTP 403. [FR-1.3]
+
+35. Create LoginAttemptLog model capturing: timestamp, ip_address, user_id, success (boolean). [FR-1.6]
+
+36. Add signal/middleware to write to LoginAttemptLog on every login attempt (success or failure). [FR-1.6]
+
+37. Implement GET /users/me/ endpoint returning current authenticated user profile. [§4.2]
+
+38. Implement PUT /users/me/ endpoint allowing profile field updates. [§4.2]
+
+39. Implement GET /users/{user_id}/ endpoint (ADMIN only). [§4.2]
+
+40. Implement GET /users/ endpoint with query params role, status, page, page_size (ADMIN only). [§4.2]
+
+41. Implement POST /users/ endpoint for ADMIN to create government officer accounts with full_name, email, phone, role, subcity_id. [FR-1.5, §4.2]
+
+42. Implement PUT /users/{user_id}/deactivate/ endpoint (ADMIN only). [FR-1.5, §4.2]
+
+43. Verify all auth endpoints with Postman/curl and confirm 403 responses for cross-role access.
+
+PHASE 4: APPLICANT PROFILE & DOCUMENT VAULT [FR-2.1 - FR-2.5, §4.2]
+44. Implement POST /users/me/documents/ endpoint (multipart): accept JPEG/PNG/PDF; validate file size < 5MB; reject zero-byte files. [FR-2.1]
+
+45. Implement server-side document validation logic: check MIME type against file extension, scan for blank files. [FR-2.1]
+
+46. Implement document vault versioning: on re-upload of the same document_type, retain old record (set is_current=False), create new record (is_current=True). [FR-2.4]
+
+47. Implement GET /users/me/documents/ endpoint returning all documents with status: Pending Review, Accepted, or Rejected with reason. [FR-2.5]
+
+48. Add land_certificate_number field to user profile model and PUT /users/me/ update logic. [FR-2.2]
+
+49. Add tin field to user profile; implement 10-digit Ethiopian Revenue and Customs Authority format validation. [FR-2.3]
+
+50. Create admin interface to manually set Document status to Accepted or Rejected with a reason field.
+
+PHASE 5: APPLICATION SUBMISSION [FR-3.1 - FR-3.8, §4.3]
+51. Implement POST /applications/ endpoint: create application with auto-generated ARN format ACPS-YYYY-XXXXXX; return application_id, arn, status: DRAFT, calculated_fee. [FR-3.1]
+
+52. Implement building category auto-classification logic in model save: Category A = single-story + span ≤7m; Category B = multi-story OR larger single-story; Category C = Category B + fire safety required. [FR-3.3]
+
+53. Implement fee auto-calculation: if project_value_etb < 2,500,000 then (value / 2000) + 300; else lookup FeeSchedule tiered table. Store immutably on application record. [FR-3.4]
+
+54. Implement GET /applications/{application_id}/fee/ returning fee breakdown. [§4.3]
+
+55. Implement PUT /applications/{application_id}/ endpoint: allowed only when status is DRAFT or REVISION_REQUIRED; update building fields and re-trigger category/fee calculation. [FR-3.7, §4.3]
+
+56. Implement POST /applications/{application_id}/documents/ (multipart): accept document_type from enumerated list; validate file is PDF or DWG, < 20MB, not blank. [FR-3.6]
+
+57. Implement dynamic required-document checklist logic based on determined building category (A/B/C as per FR-3.5). [FR-3.5]
+
+58. Implement draft retention cron job: delete DRAFT applications older than 30 days; send warning email 3 days prior to deletion. [FR-3.7]
+
+59. Implement POST /applications/{application_id}/submit/ endpoint: run completeness check verifying all required category documents are uploaded and accepted. [FR-3.8]
+
+60. If completeness check fails, return missing_documents list and block submission. [FR-3.8]
+
+61. If completeness check passes, transition status to PAYMENT_PENDING; generate invoice linked to ARN. [FR-3.8]
+
+62. Implement GET /applications/{application_id}/timeline/ returning full ApplicationHistory records with timestamps and actor names. [§4.3]
+
+63. Implement GET /applications/ with role-based queryset filtering: applicant sees own, reviewer sees assigned, senior/admin see all. [§4.3]
+
+64. Implement GET /applications/{application_id}/ returning full nested detail: application data, documents, comments, inspections, neighbors, status history. [§4.3]
+
+65. Implement DELETE /applications/{application_id}/documents/{document_id}/ restricted to DRAFT status. [§4.3]
+
+PHASE 6: NEIGHBOR CONSENT [FR-4.1 - FR-4.5, §4.4]
+66. Implement POST /applications/{application_id}/neighbors/ endpoint: accept neighbor_name, neighbor_phone, consent_file (multipart). [FR-4.1]
+
+67. Implement validation: at least one neighbor record must exist before final submission. [FR-4.3]
+
+68. Implement validation: all neighbor records must have consent_file uploaded. [FR-4.3]
+
+69. Implement GET /applications/{application_id}/neighbors/ returning neighbor list with consent status. [FR-4.5, §4.4]
+
+70. Implement DELETE /applications/{application_id}/neighbors/{neighbor_id}/ restricted to DRAFT status. [§4.4]
+
+71. Ensure reviewer and senior officer views of application detail include neighbor records. [FR-4.4]
+
+72. Add neighbor panel to applicant dashboard showing count and upload status. [FR-4.5]
+
+PHASE 7: PAYMENT DEMONSTRATION [FR-5.1 - FR-5.6, §4.5]
+73. Implement invoice generation linked to ARN showing calculated fee, breakdown, and payment methods. [FR-5.1]
+
+74. Implement POST /payments/invoices/{invoice_id}/pay/ endpoint: accept method (TELEBIRR, CBEBIRR, BANK_TRANSFER). [§4.5]
+
+75. Implement Telebirr/CBE Birr demo flow: simulate 3-second processing delay, then auto-confirm payment and generate receipt. [FR-5.3]
+
+76. Implement Bank Transfer flow: return bank account details; set status to AWAITING_MANUAL_CONFIRMATION. [FR-5.4]
+
+77. Implement POST /payments/invoices/{invoice_id}/bank-receipt/ (multipart): applicant uploads receipt photo. [§4.5]
+
+78. Implement PUT /payments/invoices/{invoice_id}/confirm/ endpoint (ADMIN only): manually confirm bank transfer. [FR-5.4, §4.5]
+
+79. On any payment confirmation, transition application status to AWAITING_ASSIGNMENT. [FR-5.5]
+
+80. Implement PDF receipt generation with ReportLab containing: ARN, amount, method, transaction reference, timestamp. [FR-5.5]
+
+81. Store receipt PDF in applicant vault and link to payment record. [FR-5.5]
+
+82. Email receipt PDF to applicant upon confirmation. [FR-5.5]
+
+83. Implement GET /payments/receipts/{receipt_id}/ returning receipt PDF as file download. [§4.5]
+
+84. Implement 48-hour payment reminder email (Celery beat or cron). [FR-5.6]
+
+85. Implement 7-day expiry: if unpaid, transition status to PAYMENT_EXPIRED; require applicant to restart from payment step. [FR-5.6]
+
+86. Implement GET /payments/ endpoint (ADMIN only) with filtering and pagination. [§4.5]
+
+PHASE 8: TECHNICAL REVIEW WORKFLOW [FR-6.1 - FR-6.8, §4.6]
+87. Implement round-robin assignment algorithm weighted by current active review count per officer. [FR-6.1]
+
+88. Implement POST /applications/{application_id}/assign-reviewer/ endpoint (system/internal or ADMIN manual override). [§4.6]
+
+89. Implement GET /reviews/my-queue/ endpoint for REVIEW_OFFICER returning assigned applications sorted by SLA urgency. [FR-6.2, §4.6]
+
+90. Build review workspace data serializer: include document download links, applicant form data, neighbor outcomes, comment panel. [FR-6.2]
+
+91. Implement POST /applications/{application_id}/comments/ endpoint: accept document_id, category (MISSING_INFO, DRAWING_ERROR, CODE_NON_COMPLIANCE, CLARIFICATION, OTHER), content. [FR-6.3, §4.6]
+
+92. On comment submission, if status not already REVISION_REQUIRED, transition to REVISION_REQUIRED and email applicant with comment count and link. [FR-6.4]
+
+93. Implement GET /applications/{application_id}/comments/ returning all comments with author, category, timestamp, resolution status. [§4.6]
+
+94. Implement PUT /applications/{application_id}/comments/{comment_id}/resolve/ endpoint: set resolution_status to RESOLVED or ESCALATED. [FR-6.5, §4.6]
+
+95. Track revision cycle counter on Application model; increment each time reviewer sends comments. [FR-6.6]
+
+96. If revision cycles exceed 3 without approval, send notification to Senior Approving Officer. [FR-6.6]
+
+97. Implement POST /applications/{application_id}/review-decision/ endpoint: accept decision (APPROVED or REJECTED). [FR-6.7, §4.6]
+
+98. For REJECTED: enforce notes minimum 100 characters and regulation_citation field (Building Proclamation 624/2009 or Regulation 243/2011). [FR-6.7]
+
+99. On APPROVED: transition to AWAITING_SENIOR_APPROVAL; notify Senior Officer. [FR-6.7]
+
+100. On REJECTED: transition to REJECTED; notify applicant with reason. [FR-6.7]
+
+101. Implement SLA tracking: 10 working days target from assignment date. [FR-6.8]
+
+102. Implement 7-working-day reminder email to reviewer. [FR-6.8]
+
+103. Implement 10-working-day escalation alert email to Senior Officer and Administrator. [FR-6.8]
+
+104. Implement GET /reviews/sla-status/ endpoint (Senior Officer and ADMIN). [§4.6]
+
+PHASE 9: PLANNING CONSENT & PERMIT ISSUANCE [FR-7.1 - FR-7.7, §4.7]
+105. Implement GET /approvals/queue/ endpoint for SENIOR_OFFICER returning applications in AWAITING_SENIOR_APPROVAL. [FR-7.1, §4.7]
+
+106. Implement senior detail view serializer including complete application, all documents, all review comments, and reviewer recommendation. [FR-7.1]
+
+107. Implement POST /applications/{application_id}/issue-consent/ endpoint. [FR-7.2, §4.7]
+
+108. Generate Planning Consent PDF with ReportLab containing: ARN, applicant name, plot address, building category, approved specs, issue date, expiry date (6 months from issue), QR code, static signature image. [FR-7.3]
+
+109. Generate QR code resolving to /verify/{permit_number} and embed in PDF. [FR-7.3]
+
+110. Store consent PDF in applicant vault and link to application; email to applicant. [FR-7.4]
+
+111. Transition status to CONSENT_ISSUED. [FR-7.4]
+
+112. Implement POST /applications/{application_id}/issue-permit/ endpoint. [FR-7.5, §4.7]
+
+113. Generate Construction Permit PDF containing: ARN, permit number CP-YYYY-XXXXXX, applicant name, plot details, approved category/specs, conditions, issue date, expiry (12 months), contractor name, QR code, static signature. [FR-7.5]
+
+114. Write record to permits registry table. [FR-7.7]
+
+115. Email permit PDF to applicant; transition status to PERMIT_ISSUED. [FR-7.7]
+
+116. Implement POST /applications/{application_id}/reject-final/ endpoint for senior rejection with reason and regulation_citations. [§4.7]
+
+117. Implement GET /permits/{permit_number}/ endpoint: public callers see only validity status, issue date, expiry date, building address; authenticated users see full details. [FR-7.6, §4.7]
+
+118. Implement GET /verify/{permit_number}/ public HTML page showing permit validity status, issue date, and expiry date with no login required. [FR-7.6, §4.7]
+
+PHASE 10: CONSTRUCTION COMMENCEMENT & INSPECTION SCHEDULING [FR-8.1 - FR-8.6, §4.8]
+119. Implement POST /applications/{application_id}/commence/ endpoint: accept start_date, contractor_name, contractor_license, supervisor_name, supervisor_phone. [FR-8.1]
+
+120. Store contractor license for administrative verification. [FR-8.2]
+
+121. On acceptance, transition status to UNDER_CONSTRUCTION. [FR-8.1]
+
+122. Implement auto-scheduling logic: Category B creates Foundation (+14 days), Structural Frame (+60 days), and Final Completion (triggered later); Category A creates Foundation and Final Completion only. [FR-8.3]
+
+123. Implement inspector assignment using same round-robin weighted algorithm as reviewers. [FR-8.4]
+
+124. Implement GET /applications/{application_id}/inspections/ returning all inspection records. [§4.8]
+
+125. Implement GET /inspections/my-schedule/ endpoint for INSPECTOR with site details and GPS. [FR-8.5, §4.8]
+
+126. Implement 48-hour pre-inspection email to inspector containing: site address, GPS coordinates, ARN, permit number, inspection type, supervisor contact. [FR-8.5]
+
+127. Implement 48-hour pre-inspection email to applicant containing: inspection type, expected date, inspector name. [FR-8.6]
+
+PHASE 11: DIGITAL SITE INSPECTION [FR-9.1 - FR-9.7, §4.8]
+128. Implement POST /inspections/{inspection_id}/start/ endpoint: record start_timestamp; set status IN_PROGRESS. [FR-9.1]
+
+129. Create InspectionChecklistTemplate model configurable by ADMIN per inspection_type. [FR-9.2]
+
+130. Implement GET /inspections/{inspection_id}/ endpoint returning checklist items for the inspection type. [FR-9.2]
+
+131. Implement PUT /inspections/{inspection_id}/checklist/ endpoint: accept array of items with result (PASS, FAIL, NA) and notes. Allow multiple updates before submission. [FR-9.2]
+
+132. Implement POST /inspections/{inspection_id}/photos/ endpoint (multipart): accept JPEG/PNG up to 10MB each; enforce minimum 3 photos before submission. [FR-9.3]
+
+133. Store photo with auto-generated taken_at timestamp. [FR-9.3]
+
+134. Implement POST /inspections/{inspection_id}/submit/ endpoint: accept overall_result (PASSED or FAILED). [FR-9.4]
+
+135. Enforce failure_summary minimum 50 characters when result is FAILED. [FR-9.4]
+
+136. On submission, record submitted_at timestamp and lock inspection record from further edits. [FR-9.5]
+
+137. If PASSED: email applicant confirming outcome; mark milestone complete; activate next scheduled inspection. [FR-9.6]
+
+138. If FAILED: email applicant with failure summary; create re-inspection record linked to original. [FR-9.7]
+
+139. Implement POST /applications/{application_id}/inspections/{inspection_id}/request-reinspection/ endpoint: accept corrections_made description; schedule new inspection following same assignment process. [FR-9.7, §4.8]
+
+PHASE 12: COMPLETION CERTIFICATE [FR-10.1 - FR-10.5, §4.9]
+140. Implement POST /applications/{application_id}/declare-completion/ endpoint: accept completion_date + minimum 5 photo uploads via multipart. [FR-10.1]
+
+141. Enforce minimum 5 photos requirement; reject if fewer. [FR-10.1]
+
+142. On declaration, schedule Final Completion Inspection within 7 working days. [FR-10.2]
+
+143. Transition status to COMPLETION_DECLARED. [FR-10.2]
+
+144. When final inspection passes, notify Senior Approving Officer for sign-off. [FR-10.3]
+
+145. Implement senior officer review view to compare completed structure photos against approved plans. [FR-10.4]
+
+146. Implement POST /applications/{application_id}/issue-completion-certificate/ endpoint (allowed only when final inspection passed and senior has reviewed). [FR-10.5, §4.9]
+
+147. Generate Completion Certificate PDF with ReportLab: ARN, permit number, certificate number CC-YYYY-XXXXXX, applicant name, plot details, final building specs, completion date, issue date, QR code. [FR-10.5]
+
+148. Store certificate in applicant vault; email to applicant. [FR-10.5]
+
+149. Transition status to COMPLETED; archive permit record. [FR-10.5]
+
+PHASE 13: NOTIFICATIONS [§4.10]
+150. Implement GET /notifications/ endpoint returning caller's notifications sorted newest first; support unread_only query param. [§4.10]
+
+151. Implement PUT /notifications/{notification_id}/read/ endpoint. [§4.10]
+
+152. Implement PUT /notifications/read-all/ endpoint. [§4.10]
+
+153. Build reusable create_notification() service function called by all other modules on status changes, comments, assignments, and reminders.
+
+154. Build email notification templates for every event: registration, submission, payment, assignment, revision required, approval, rejection, inspection scheduled, inspection result, certificate issued.
+
+155. Configure all emails to use Django send_mail(); verify console output in development.
+
+PHASE 14: ADMINISTRATION & REPORTING [FR-12.5, §4.11]
+156. Implement GET /admin/stats/ endpoint returning: total applications by status, average processing days per stage, SLA breach counts, payment volume totals. [FR-12.5, §4.11]
+
+157. Implement GET /admin/audit-log/ endpoint with query filters: user_id, action_type, date_from, date_to, pagination. [§4.11]
+
+158. Implement PUT /admin/config/fee-schedule/ endpoint updating tiered fee rules. [§4.11]
+
+159. Implement PUT /admin/config/sla-thresholds/ endpoint updating SLA day thresholds per stage. [§4.11]
+
+160. Implement PUT /admin/config/inspection-checklists/{inspection_type}/ endpoint updating checklist items. [§4.11]
+
+161. Implement POST /admin/config/notification-templates/ endpoint creating/updating email templates. [§4.11]
+
+162. Implement GET /admin/reports/export/ endpoint generating downloadable CSV based on report_type, date_from, date_to. [FR-12.5, §4.11]
+
+163. Ensure all admin endpoints are restricted to ADMIN role.
+
+PHASE 15: FRONTEND - AUTH & CORE SCREENS
+164. Build React Register page with fields: full name, phone, email, password.
+
+165. Build React Login page with email/password; store tokens and role in global state/localStorage.
+
+166. Build React Forgot Password page requesting email.
+
+167. Build React Reset Password page accepting token and new password.
+
+168. Implement React Router with role-based route guards (redirect unauthorized roles).
+
+169. Build shared Layout component with sidebar/topbar navigation conditional on role.
+
+170. Build NotificationBell component polling GET /notifications/ and marking read.
+
+171. Set up i18n framework (e.g., react-i18next) with English and Amharic translation files.
+
+172. Ensure all forms are keyboard-navigable and meet WCAG 2.1 Level AA contrast/label requirements. [NFR-5]
+
+PHASE 16: FRONTEND - APPLICANT PORTAL [FR-12.1]
+173. Build Applicant Dashboard page: list active/past applications with status badges; timeline view per application; outstanding actions panel; recent notifications list. [FR-12.1]
+
+174. Build Profile Completion page: upload national ID/passport (preview validation errors), enter land certificate number, enter TIN with format validation. [FR-2.1 - FR-2.3]
+
+175. Build Document Vault page: table of uploaded documents showing status, version history, download links. [FR-2.4 - FR-2.5]
+
+176. Build New Application wizard (multi-step form):
+
+• Step 1: Building details (category auto-calculated and displayed, fee calculated and displayed). [FR-3.2 - FR-3.4]
+
+• Step 2: Document upload with dynamic checklist based on category. [FR-3.5 - FR-3.6]
+
+• Step 3: Neighbor entry (add/remove rows: name, phone, consent file upload). [FR-4.1 - FR-4.3]
+
+• Step 4: Review all data and submit. [FR-3.8]
+
+177. Build Application Detail page: full read-only view, timeline component, comment viewer (when in revision), document download links.
+
+178. Build Payment Demo page: show invoice total; three buttons (Telebirr, CBE Birr, Bank Transfer); on click show 3-second spinner; then display success toast and receipt download link. For Bank Transfer, show account details and receipt upload input. [FR-5.1 - FR-5.5]
+
+179. Build Commencement Notification form: start date, contractor name/license, supervisor name/phone. [FR-8.1]
+
+180. Build Completion Declaration form: completion date, photo upload (enforce 5 files), angle description inputs. [FR-10.1]
+
+181. Build Permit/Certificate Vault section within dashboard to download issued PDFs.
+
+PHASE 17: FRONTEND - REVIEWER & SENIOR OFFICER [FR-12.2, FR-12.4]
+182. Build Review Officer Dashboard: table of assigned applications sorted by SLA urgency (color-code red if near 10 days); section for applications awaiting revision upload; completed reviews list. [FR-12.2]
+
+183. Build Review Workspace page: applicant details; document download links (not inline viewer); neighbor consent status; comment panel with form (select document, select category, enter content); submit comments button. [FR-6.2 - FR-6.3]
+
+184. Build Revision Review view: see applicant's revised documents and mark each comment as RESOLVED or ESCALATED. [FR-6.5]
+
+185. Build Review Decision buttons: APPROVE (confirm dialog) and REJECT (modal with textarea enforcing 100 chars and regulation citation dropdown). [FR-6.7]
+
+186. Build Senior Officer Dashboard: queue of AWAITING_SENIOR_APPROVAL; flagged applications with excess revision cycles (>3); recently issued permits; department-wide average processing time metrics. [FR-12.4]
+
+187. Build Senior Officer Detail page: view full application and review history; buttons Issue Planning Consent, Issue Construction Permit, Reject Final; display generated PDF preview after issuance. [FR-7.1 - FR-7.5]
+
+PHASE 18: FRONTEND - INSPECTOR RESPONSIVE INTERFACE [FR-12.3]
+188. Build Inspector Schedule page (responsive for tablet): list view of upcoming inspections with countdown timer to scheduled date; past inspections with pass/fail badges. [FR-12.3]
+
+189. Add Map View to inspector schedule showing inspection locations using OpenStreetMap or Google Maps with GPS pins. [FR-12.3]
+
+190. Build Inspection Form page: display checklist items with Pass/Fail/N/A radio buttons and notes fields per item; large touch-friendly UI. [FR-9.2]
+
+191. Build Photo Upload component: allow multiple file selection or camera capture; show thumbnails; enforce minimum 3 with counter. [FR-9.3]
+
+192. Build Inspection Submit screen: overall result toggle (Passed/Failed); failure summary textarea (enforce 50 chars); submit button with confirmation. [FR-9.4 - FR-9.5]
+
+193. Test all inspector pages on a 10-inch tablet in portrait mode; ensure buttons are ≥44px touch targets. [Adjusted SRS]
+
+PHASE 19: FRONTEND - ADMIN DASHBOARD [FR-12.5]
+194. Build Admin Dashboard page: cards showing total applications by status; charts for average processing time; SLA breach counts per officer; payment volume totals; recent system events log. [FR-12.5]
+
+195. Build User Management page: table of all users; form to create officer accounts (full name, email, phone, role, subcity); deactivate button. [FR-1.5]
+
+196. Build Applications Browser page: searchable, filterable table of all applications with status filter.
+
+197. Build Fee Schedule Editor page: form to update tiered fee rules for projects > ETB 2.5M. [FR-3.4]
+
+198. Build SLA Thresholds Editor page: inputs for day thresholds per stage. [FR-6.8]
+
+199. Build Inspection Checklist Editor page: add/edit/delete checklist items per inspection type. [FR-9.2]
+
+200. Build Notification Templates editor: textareas for email subject/body with variable placeholders.
+
+201. Build Reports Export page: select report type and date range; download generated CSV. [FR-12.5]
+
+PHASE 20: PDF GENERATION, QR CODES & STATIC SIGNATURES
+202. Set up ReportLab utility module with base canvas and styles.
+
+203. Create Planning Consent PDF layout function: header, ARN, applicant details, plot address, building specs, issue date, expiry date (6 months), static signature image placement, QR code placement. [FR-7.3]
+
+204. Create Construction Permit PDF layout function: permit number CP-YYYY-XXXXXX, all details from FR-7.5, conditions list, signature, QR. [FR-7.5]
+
+205. Create Payment Receipt PDF layout function: ARN, amount, method, transaction ref, timestamp. [FR-5.5]
+
+206. Create Completion Certificate PDF layout function: certificate number CC-YYYY-XXXXXX, final specs, completion date, signature, QR. [FR-10.5]
+
+207. Implement QR code generation utility: create PNG from URL string, embed into PDFs during generation. [FR-7.3, FR-7.5, FR-10.5]
+
+208. Create media/signatures/ directory; implement upload endpoint for ADMIN to store officer signature PNGs by user ID.
+
+209. Implement signature retrieval logic in PDF generation: fetch officer's signature file and draw it on the PDF at a fixed position. [Adjusted SRS]
+
+PHASE 21: TESTING, SECURITY, PERFORMANCE & DEPLOYMENT [NFR-1 - NFR-7]
+210. Write Django unit tests for all model methods: ARN generation, fee calculation, category classification, round-robin assignment.
+
+211. Write Django API integration tests for every endpoint: test happy path, validation errors, and 403/401 responses.
+
+212. Implement Django Ratelimit or DRF throttling: 100 requests/minute per authenticated user, 20 requests/minute for public endpoints. [NFR-3]
+
+213. Configure Django to enforce HTTPS-only cookies and secure headers; ensure TLS 1.2+ in Nginx. [NFR-3]
+
+214. Verify password hashes use bcrypt with cost factor 12. [NFR-3]
+
+215. Set Linux file permissions on media/ folder: chmod 755 directories, chmod 644 files; ensure Django runs as non-root. [NFR-3]
+
+216. Verify JWT signing algorithm is HS256. [NFR-3]
+
+217. Wrap all payment-related view logic in @transaction.atomic database transactions. [NFR-4]
+
+218. Enforce that Payment records are never DELETEd; only status changed to ARCHIVED. [NFR-4]
+
+219. Enforce that Application records are never physically deleted; only status changed to CANCELLED or ARCHIVED. [NFR-4]
+
+220. Performance test file upload validation: verify it completes within 3 seconds for 20MB files. [NFR-1]
+
+221. Performance test PDF generation: verify it completes within 10 seconds. [NFR-1]
+
+222. Performance test standard list/detail API responses under 500ms. [NFR-1]
+
+223. Run accessibility audit (Lighthouse or axe DevTools) on all frontend pages; fix WCAG 2.1 Level AA violations. [NFR-5]
+
+224. Verify all UI text renders in both English and Amharic without truncation. [NFR-5]
+
+225. Conduct load testing with 500 concurrent users hitting authentication and application list endpoints; verify no degradation. [NFR-6]
+
+226. Prepare Ubuntu 22.04 server: install PostgreSQL, Nginx, Gunicorn, virtualenv.
+
+227. Configure Nginx as reverse proxy with SSL/TLS certificate.
+
+228. Configure Gunicorn service for Django with auto-start.
+
+229. Set up daily cron backup for PostgreSQL database and media/ folder.
+
+230. Write final deployment runbook and .env.example file for production.
+
+How to use this: Start at Task 1 and do not skip. Each task builds the foundation for the next. When you finish Task 230, the entire SRS is implemented.
+
+
+
+
+
+
+
+Generated by Kimi.ai
+
+
+
+
+
