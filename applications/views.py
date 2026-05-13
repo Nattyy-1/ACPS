@@ -1,8 +1,13 @@
 from rest_framework import status
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from .serializers import ApplicationCreateSerializer, ApplicationUpdateSerializer
+from .serializers import (
+    ApplicationCreateSerializer,
+    ApplicationUpdateSerializer,
+    ApplicationDocumentSerializer,
+)
 from .models import Application
 from accounts.permissions import IsApplicant
 
@@ -60,3 +65,30 @@ class ApplicationUpdateView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class ApplicationDocumentUploadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, application_id):
+        try:
+            app = Application.objects.get(pk=application_id, applicant=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if app.status != Application.Status.DRAFT:
+            return Response(
+                {"detail": "Documents can only be uploaded for DRAFT applications."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = ApplicationDocumentSerializer(
+            data=request.data,
+            context={"request": request, "application": app},
+        )
+        serializer.is_valid(raise_exception=True)
+        doc = serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

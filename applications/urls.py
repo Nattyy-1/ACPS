@@ -1,5 +1,10 @@
 from django.urls import path
-from .views import ApplicationCreateView, ApplicationFeeView, ApplicationUpdateView
+from .views import (
+    ApplicationCreateView,
+    ApplicationFeeView,
+    ApplicationUpdateView,
+    ApplicationDocumentUploadView,
+)
 
 urlpatterns = [
     path("applications/", ApplicationCreateView.as_view(), name="application-create"),
@@ -12,5 +17,10 @@ urlpatterns = [
         "applications/<uuid:application_id>/",
         ApplicationUpdateView.as_view(),
         name="application-update",
+    ),
+    path(
+        "applications/<uuid:application_id>/documents/",
+        ApplicationDocumentUploadView.as_view(),
+        name="application-document-upload",
     ),
 ]
