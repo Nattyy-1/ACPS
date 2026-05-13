@@ -4,6 +4,15 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.test import APIClient
+from rest_framework.views import APIView
+from .permissions import (
+    IsApplicant,
+    IsReviewOfficer,
+    IsInspector,
+    IsSeniorOfficer,
+    IsAdmin,
+    IsAdminOrSeniorOfficer,
+)
 
 User = get_user_model()
 
@@ -435,3 +444,103 @@ class ResetPasswordAPITests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class PermissionClassesTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="perm@example.com",
+            full_name="Perm User",
+            phone="+251911111111",
+            password="testpass123",
+            role=User.Role.APPLICANT,
+        )
+        self.review_officer = User.objects.create_user(
+            email="review@example.com",
+            full_name="Review Officer",
+            phone="+251922222222",
+            password="testpass123",
+            role=User.Role.REVIEW_OFFICER,
+        )
+        self.inspector = User.objects.create_user(
+            email="inspector@example.com",
+            full_name="Inspector",
+            phone="+251933333333",
+            password="testpass123",
+            role=User.Role.INSPECTOR,
+        )
+        self.senior = User.objects.create_user(
+            email="senior@example.com",
+            full_name="Senior Officer",
+            phone="+251944444444",
+            password="testpass123",
+            role=User.Role.SENIOR_OFFICER,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            full_name="Admin",
+            phone="+251955555555",
+            password="testpass123",
+            role=User.Role.ADMIN,
+        )
+
+    def _check(self, permission_class, user, expected):
+        request = type("Request", (), {"user": user})()
+        perm = permission_class()
+        result = perm.has_permission(request, None)
+        self.assertEqual(result, expected)
+
+    def test_is_applicant_allows_applicant(self):
+        self._check(IsApplicant, self.user, True)
+
+    def test_is_applicant_denies_others(self):
+        for u in [self.review_officer, self.inspector, self.senior, self.admin]:
+            self._check(IsApplicant, u, False)
+
+    def test_is_review_officer_allows_review_officer(self):
+        self._check(IsReviewOfficer, self.review_officer, True)
+
+    def test_is_review_officer_denies_others(self):
+        for u in [self.user, self.inspector, self.senior, self.admin]:
+            self._check(IsReviewOfficer, u, False)
+
+    def test_is_inspector_allows_inspector(self):
+        self._check(IsInspector, self.inspector, True)
+
+    def test_is_inspector_denies_others(self):
+        for u in [self.user, self.review_officer, self.senior, self.admin]:
+            self._check(IsInspector, u, False)
+
+    def test_is_senior_officer_allows_senior_officer(self):
+        self._check(IsSeniorOfficer, self.senior, True)
+
+    def test_is_senior_officer_denies_others(self):
+        for u in [self.user, self.review_officer, self.inspector, self.admin]:
+            self._check(IsSeniorOfficer, u, False)
+
+    def test_is_admin_allows_admin(self):
+        self._check(IsAdmin, self.admin, True)
+
+    def test_is_admin_denies_others(self):
+        for u in [self.user, self.review_officer, self.inspector, self.senior]:
+            self._check(IsAdmin, u, False)
+
+    def test_is_admin_or_senior_officer_allows_both(self):
+        self._check(IsAdminOrSeniorOfficer, self.admin, True)
+        self._check(IsAdminOrSeniorOfficer, self.senior, True)
+
+    def test_is_admin_or_senior_officer_denies_others(self):
+        for u in [self.user, self.review_officer, self.inspector]:
+            self._check(IsAdminOrSeniorOfficer, u, False)
+
+    def test_all_permissions_deny_unauthenticated(self):
+        anon = type("User", (), {"is_authenticated": False, "role": ""})()
+        for cls in [
+            IsApplicant,
+            IsReviewOfficer,
+            IsInspector,
+            IsSeniorOfficer,
+            IsAdmin,
+            IsAdminOrSeniorOfficer,
+        ]:
+            self._check(cls, anon, False)
