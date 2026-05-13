@@ -218,3 +218,71 @@ class RefreshAPITests(TestCase):
             self.url, {"refresh": tokens["refresh"]}, format="json"
         )
         self.assertNotEqual(response.data["access"], tokens["access"])
+
+
+class LogoutAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/auth/logout/"
+        self.password = "testpass123"
+        self.user = User.objects.create_user(
+            email="logout@example.com",
+            full_name="Logout User",
+            phone="+251911111111",
+            password=self.password,
+        )
+
+    def _login(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "logout@example.com", "password": self.password},
+            format="json",
+        )
+        return response.data
+
+    def _auth_header(self, token):
+        return f"Bearer {token}"
+
+    def test_logout_success(self):
+        tokens = self._login()
+        response = self.client.post(
+            self.url,
+            {"refresh": tokens["refresh"]},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth_header(tokens["access"]),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_logout_without_auth(self):
+        tokens = self._login()
+        response = self.client.post(
+            self.url,
+            {"refresh": tokens["refresh"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_logout_invalid_token(self):
+        tokens = self._login()
+        response = self.client.post(
+            self.url,
+            {"refresh": "invalidtoken"},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth_header(tokens["access"]),
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_logout_blacklists_refresh_token(self):
+        tokens = self._login()
+        self.client.post(
+            self.url,
+            {"refresh": tokens["refresh"]},
+            format="json",
+            HTTP_AUTHORIZATION=self._auth_header(tokens["access"]),
+        )
+        response = self.client.post(
+            "/api/v1/auth/refresh/",
+            {"refresh": tokens["refresh"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
