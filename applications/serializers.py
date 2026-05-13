@@ -70,6 +70,19 @@ class NeighborSerializer(serializers.ModelSerializer):
         ]
 
 
+class NeighborCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NeighborConsent
+        fields = ["neighbor_name", "neighbor_phone", "consent_file"]
+
+    def validate_consent_file(self, value):
+        if value.size == 0:
+            raise serializers.ValidationError("File cannot be empty.")
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError("File size must not exceed 10MB.")
+        return value
+
+
 class ApplicationDetailSerializer(serializers.ModelSerializer):
     application_id = serializers.UUIDField(source="id")
     documents = DocumentSerializer(many=True, read_only=True)

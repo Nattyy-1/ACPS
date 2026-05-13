@@ -13,9 +13,12 @@ from .serializers import (
     ApplicationListSerializer,
     ApplicationUpdateSerializer,
     ApplicationDocumentSerializer,
+    ApplicationHistorySerializer,
+    NeighborCreateSerializer,
+    NeighborSerializer,
     RequiredDocumentSerializer,
 )
-from .models import Application, ApplicationHistory, Document
+from .models import Application, ApplicationHistory, Document, NeighborConsent
 from accounts.permissions import (
     IsAdmin,
     IsAdminOrSeniorOfficer,
@@ -255,6 +258,15 @@ class ApplicationSubmitView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        neighbor_count = app.neighbors.count()
+        if neighbor_count == 0:
+            return Response(
+                {
+                    "detail": "At least one neighbor consent record is required before submission.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with transaction.atomic():
             ApplicationHistory.objects.create(
                 application=app,
@@ -321,6 +333,70 @@ class ApplicationDocumentDeleteView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         doc.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ApplicationNeighborView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request, application_id):
+        try:
+            app = Application.objects.get(pk=application_id, applicant=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        neighbors = app.neighbors.all()
+        serializer = NeighborSerializer(neighbors, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, application_id):
+        try:
+            app = Application.objects.get(pk=application_id, applicant=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if app.status != Application.Status.DRAFT:
+            return Response(
+                {"detail": "Neighbors can only be added to DRAFT applications."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = NeighborCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(application=app)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ApplicationNeighborDeleteView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+
+    def delete(self, request, application_id, neighbor_id):
+        try:
+            app = Application.objects.get(pk=application_id, applicant=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if app.status != Application.Status.DRAFT:
+            return Response(
+                {"detail": "Neighbors can only be deleted for DRAFT applications."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            neighbor = NeighborConsent.objects.get(pk=neighbor_id, application=app)
+        except NeighborConsent.DoesNotExist:
+            return Response(
+                {"detail": "Neighbor not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        neighbor.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

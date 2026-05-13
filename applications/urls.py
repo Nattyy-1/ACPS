@@ -5,6 +5,8 @@ from .views import (
     ApplicationUpdateView,
     ApplicationDocumentUploadView,
     ApplicationDocumentDeleteView,
+    ApplicationNeighborView,
+    ApplicationNeighborDeleteView,
     ApplicationRequiredDocumentsView,
     ApplicationSubmitView,
     ApplicationTimelineView,
@@ -36,6 +38,16 @@ urlpatterns = [
         "applications/<uuid:application_id>/submit/",
         ApplicationSubmitView.as_view(),
         name="application-submit",
+    ),
+    path(
+        "applications/<uuid:application_id>/neighbors/",
+        ApplicationNeighborView.as_view(),
+        name="application-neighbors",
+    ),
+    path(
+        "applications/<uuid:application_id>/neighbors/<uuid:neighbor_id>/",
+        ApplicationNeighborDeleteView.as_view(),
+        name="application-neighbor-delete",
     ),
     path(
         "applications/<uuid:application_id>/documents/<uuid:document_id>/",
