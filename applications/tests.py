@@ -1,9 +1,11 @@
+from decimal import Decimal
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.test import APIClient
 from .models import Application, Document, ApplicationHistory, NeighborConsent
+from payments.models import FeeSchedule
 
 User = get_user_model()
 
@@ -357,3 +359,48 @@ class ApplicationCreateAPITests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["building_category"], "C")
+
+    def test_fee_below_threshold_uses_formula(self):
+        data = self._valid_data()
+        data["project_value_etb"] = 1500000
+        response = self.client.post(
+            self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        expected = float(1500000 / 2000 + 300)
+        self.assertEqual(response.data["calculated_fee"], expected)
+
+    def test_fee_at_threshold_uses_formula(self):
+        data = self._valid_data()
+        data["project_value_etb"] = 2499999.99
+        response = self.client.post(
+            self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertAlmostEqual(response.data["calculated_fee"], 1549.999995, places=5)
+
+    def test_fee_above_threshold_uses_tiered_schedule(self):
+        FeeSchedule.objects.create(
+            min_value_etb=Decimal("2500000"),
+            max_value_etb=None,
+            fee_percentage=Decimal("0.001"),
+            fixed_fee_etb=Decimal("500"),
+        )
+        data = self._valid_data()
+        data["project_value_etb"] = 5000000
+        response = self.client.post(
+            self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        expected = float(5000000 * 0.001 + 500)
+        self.assertEqual(response.data["calculated_fee"], expected)
+
+    def test_fee_above_threshold_without_schedule_falls_back(self):
+        data = self._valid_data()
+        data["project_value_etb"] = 5000000
+        response = self.client.post(
+            self.url, data, format="json", HTTP_AUTHORIZATION=self._auth()
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        expected = float(5000000 / 2000 + 300)
+        self.assertEqual(response.data["calculated_fee"], expected)

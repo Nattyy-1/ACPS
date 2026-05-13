@@ -106,7 +106,22 @@ class Application(models.Model):
 
         if project_value_etb < Decimal("2500000"):
             return project_value_etb / Decimal("2000") + Decimal("300")
-        return None
+        from payments.models import FeeSchedule
+
+        tier = (
+            FeeSchedule.objects.filter(
+                min_value_etb__lte=project_value_etb,
+            )
+            .filter(
+                models.Q(max_value_etb__isnull=True)
+                | models.Q(max_value_etb__gte=project_value_etb)
+            )
+            .order_by("min_value_etb")
+            .first()
+        )
+        if tier:
+            return project_value_etb * tier.fee_percentage + tier.fixed_fee_etb
+        return project_value_etb / Decimal("2000") + Decimal("300")
 
 
 class Document(models.Model):
