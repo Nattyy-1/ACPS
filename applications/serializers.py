@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Application, ApplicationHistory, Document
+from .models import Application, ApplicationHistory, Document, NeighborConsent
 
 
 class ApplicationListSerializer(serializers.ModelSerializer):
@@ -45,6 +45,78 @@ class ApplicationHistorySerializer(serializers.ModelSerializer):
 
     def get_actor_name(self, obj):
         return obj.actor.full_name if obj.actor else "System"
+
+
+class DocumentSerializer(serializers.ModelSerializer):
+    document_id = serializers.UUIDField(source="id")
+
+    class Meta:
+        model = Document
+        fields = [
+            "document_id", "document_type", "file_name", "file_size_bytes",
+            "mime_type", "validation_status", "rejection_reason",
+            "version_number", "is_current", "created_at",
+        ]
+
+
+class NeighborSerializer(serializers.ModelSerializer):
+    neighbor_id = serializers.UUIDField(source="id")
+
+    class Meta:
+        model = NeighborConsent
+        fields = [
+            "neighbor_id", "neighbor_name", "neighbor_phone",
+            "consent_file", "status", "created_at",
+        ]
+
+
+class ApplicationDetailSerializer(serializers.ModelSerializer):
+    application_id = serializers.UUIDField(source="id")
+    documents = DocumentSerializer(many=True, read_only=True)
+    neighbors = NeighborSerializer(many=True, read_only=True)
+    history = ApplicationHistorySerializer(many=True, read_only=True)
+    timeline = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Application
+        fields = [
+            "application_id", "arn", "building_category", "status",
+            "subcity_id", "woreda", "plot_address",
+            "plot_gps_lat", "plot_gps_lng",
+            "height_m", "floors_above", "floors_below", "floor_area_sqm",
+            "intended_use", "architect_name", "architect_license",
+            "contractor_name", "contractor_license",
+            "project_value_etb", "calculated_fee",
+            "assigned_officer", "revision_cycle",
+            "documents", "neighbors", "history", "timeline",
+            "created_at", "updated_at",
+        ]
+
+    def get_timeline(self, obj):
+        qs = obj.history.all()
+        return ApplicationHistorySerializer(qs, many=True).data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["calculated_fee"] = (
+            float(instance.calculated_fee) if instance.calculated_fee else None
+        )
+        data["plot_gps_lat"] = float(instance.plot_gps_lat)
+        data["plot_gps_lng"] = float(instance.plot_gps_lng)
+        data["height_m"] = float(instance.height_m)
+        data["floor_area_sqm"] = float(instance.floor_area_sqm)
+        data["project_value_etb"] = float(instance.project_value_etb)
+        data["assigned_officer"] = (
+            {
+                "id": str(instance.assigned_officer.id),
+                "full_name": instance.assigned_officer.full_name,
+            }
+            if instance.assigned_officer
+            else None
+        )
+        data["comments"] = []
+        data["inspections"] = []
+        return data
 
 
 class ApplicationCreateSerializer(serializers.ModelSerializer):

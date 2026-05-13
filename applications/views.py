@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import (
     ApplicationCreateSerializer,
+    ApplicationDetailSerializer,
     ApplicationHistorySerializer,
     ApplicationListSerializer,
     ApplicationUpdateSerializer,
@@ -86,13 +87,46 @@ class ApplicationFeeView(APIView):
 
 class ApplicationUpdateView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsApplicant]
 
     ALLOWED_STATUSES = {"DRAFT", "REVISION_REQUIRED"}
 
-    def put(self, request, application_id):
+    def get_permissions(self):
+        if self.request.method == "GET":
+            role = getattr(self.request.user, "role", None)
+            if role == "APPLICANT":
+                return [IsApplicant()]
+            elif role == "REVIEW_OFFICER":
+                return [IsReviewOfficer()]
+            elif role == "INSPECTOR":
+                return [IsInspector()]
+            elif role == "SENIOR_OFFICER":
+                return [IsSeniorOfficer()]
+            return [IsAdmin()]
+        return [IsApplicant()]
+
+    def get(self, request, application_id):
+        user = request.user
         try:
-            app = Application.objects.get(pk=application_id, applicant=request.user)
+            if user.role == "APPLICANT":
+                app = Application.objects.get(pk=application_id, applicant=user)
+            elif user.role == "REVIEW_OFFICER":
+                app = Application.objects.get(
+                    pk=application_id, assigned_officer=user
+                )
+            else:
+                app = Application.objects.get(pk=application_id)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = ApplicationDetailSerializer(app)
+        return Response(serializer.data)
+
+    def put(self, request, application_id):
+        user = request.user
+        try:
+            app = Application.objects.get(pk=application_id, applicant=user)
         except Application.DoesNotExist:
             return Response(
                 {"detail": "Application not found."},
@@ -260,6 +294,34 @@ class ApplicationSubmitView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class ApplicationDocumentDeleteView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+
+    def delete(self, request, application_id, document_id):
+        try:
+            app = Application.objects.get(pk=application_id, applicant=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if app.status != Application.Status.DRAFT:
+            return Response(
+                {"detail": "Documents can only be deleted for DRAFT applications."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            doc = Document.objects.get(pk=document_id, application=app)
+        except Document.DoesNotExist:
+            return Response(
+                {"detail": "Document not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        doc.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ApplicationTimelineView(APIView):
