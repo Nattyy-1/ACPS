@@ -73,6 +73,28 @@ class Application(models.Model):
     def __str__(self):
         return self.arn or str(self.id)
 
+    @staticmethod
+    def generate_arn():
+        import datetime
+
+        year = datetime.date.today().year
+        prefix = f"ACPS-{year}-"
+        last = Application.objects.filter(arn__startswith=prefix).order_by("arn").last()
+        if last:
+            parts = last.arn.split("-")
+            next_num = int(parts[-1]) + 1
+        else:
+            next_num = 1
+        return f"{prefix}{next_num:06d}"
+
+    @staticmethod
+    def calculate_fee(project_value_etb):
+        from decimal import Decimal
+
+        if project_value_etb < Decimal("2500000"):
+            return project_value_etb / Decimal("2000") + Decimal("300")
+        return None
+
 
 class Document(models.Model):
     class DocumentType(models.TextChoices):
