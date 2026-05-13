@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     CommenceConstructionView,
+    DeclareCompletionView,
     ApplicationInspectionListView,
     InspectorScheduleView,
     InspectionDetailView,
@@ -16,6 +17,11 @@ urlpatterns = [
         "applications/<uuid:application_id>/commence/",
         CommenceConstructionView.as_view(),
         name="commence-construction",
+    ),
+    path(
+        "applications/<uuid:application_id>/declare-completion/",
+        DeclareCompletionView.as_view(),
+        name="declare-completion",
     ),
     path(
         "applications/<uuid:application_id>/inspections/",

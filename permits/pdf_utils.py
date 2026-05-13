@@ -134,3 +134,72 @@ def generate_construction_permit_pdf(application, permit, verify_url=""):
     c.save()
     buf.seek(0)
     return buf
+
+
+def generate_completion_certificate_pdf(application, permit, verify_url=""):
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(40, height - 50, "COMPLETION CERTIFICATE")
+    c.setFont("Helvetica", 9)
+    c.drawString(40, height - 68, "Issued under Building Proclamation 624/2009 and Regulation 243/2011")
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, height - 95, "Certificate Details")
+    y = height - 115
+    construction_permit = application.permits.filter(permit_type="CONSTRUCTION").first()
+    for label, val in [
+        ("Certificate Number", permit.permit_number),
+        ("ARN", application.arn),
+        ("Permit Number", construction_permit.permit_number if construction_permit else "N/A"),
+        ("Applicant", application.applicant.full_name),
+        ("Plot Address", application.plot_address),
+        ("Subcity", application.subcity_id),
+        ("Woreda", application.woreda),
+        ("Building Category", f"Category {application.building_category}"),
+        ("Height (m)", str(application.height_m)),
+        ("Floors Above Ground", str(application.floors_above)),
+        ("Floors Below Ground", str(application.floors_below)),
+        ("Floor Area (sqm)", str(application.floor_area_sqm)),
+        ("Intended Use", application.intended_use),
+        ("Contractor", application.contractor_name or "Not specified"),
+        ("Completion Date", permit.issue_date.strftime("%Y-%m-%d")),
+        ("Issue Date", permit.issue_date.strftime("%Y-%m-%d")),
+    ]:
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(40, y, f"{label}:")
+        c.setFont("Helvetica", 9)
+        c.drawString(170, y, str(val))
+        y -= 16
+
+    y -= 20
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(40, y, "Certification Statement:")
+    y -= 16
+    c.setFont("Helvetica", 9)
+    statement = (
+        "This is to certify that the building construction has been completed "
+        "in accordance with the approved plans and specifications, and complies "
+        "with the Building Proclamation 624/2009 and relevant regulations."
+    )
+    c.drawString(40, y, statement[:80])
+    c.drawString(40, y - 14, statement[80:])
+
+    y -= 40
+    if verify_url:
+        _draw_qr(c, 40, y - 80, verify_url)
+        c.setFont("Helvetica", 8)
+        c.drawString(40, y - 90, "Scan to verify certificate validity")
+
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(40, y - 150, "Authorized Signature:")
+    c.setFont("Helvetica", 9)
+    c.drawString(40, y - 168, "_________________________")
+    c.drawString(40, y - 183, "Senior Approving Officer")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf

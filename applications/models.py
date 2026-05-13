@@ -220,6 +220,7 @@ class Document(models.Model):
         RECEIPT = "RECEIPT", "Payment Receipt"
         CONSENT = "CONSENT", "Planning Consent"
         PERMIT = "PERMIT", "Construction Permit"
+        COMPLETION_PHOTO = "COMPLETION_PHOTO", "Completion Photo"
 
     class ValidationStatus(models.TextChoices):
         PENDING = "PENDING", "Pending Review"

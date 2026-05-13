@@ -13,6 +13,11 @@ urlpatterns = [
         name="approval-detail",
     ),
     path(
+        "approvals/completion-review/<uuid:application_id>/",
+        views.SeniorCompletionReviewView.as_view(),
+        name="completion-review",
+    ),
+    path(
         "applications/<uuid:application_id>/issue-consent/",
         views.IssueConsentView.as_view(),
         name="issue-consent",
@@ -21,6 +26,11 @@ urlpatterns = [
         "applications/<uuid:application_id>/issue-permit/",
         views.IssuePermitView.as_view(),
         name="issue-permit",
+    ),
+    path(
+        "applications/<uuid:application_id>/issue-completion-certificate/",
+        views.IssueCompletionCertificateView.as_view(),
+        name="issue-completion-certificate",
     ),
     path(
         "applications/<uuid:application_id>/reject-final/",

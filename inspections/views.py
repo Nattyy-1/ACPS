@@ -1,5 +1,6 @@
 import datetime
 
+from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Count
@@ -12,7 +13,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from accounts.permissions import IsAdmin, IsApplicant, IsInspector, IsSeniorOfficer
-from applications.models import Application, ApplicationHistory
+from applications.models import Application, ApplicationHistory, Document
 from notifications.models import Notification
 from .models import Inspection, InspectionChecklistTemplate, InspectionChecklistItem, InspectionPhoto
 from .serializers import (
@@ -22,7 +23,6 @@ from .serializers import (
 
 
 def round_robin_inspector():
-    from django.contrib.auth import get_user_model
     User = get_user_model()
     inspectors = User.objects.filter(role="INSPECTOR", is_active=True)
     if not inspectors:
@@ -242,6 +242,99 @@ class InspectorScheduleView(APIView):
         return Response(results)
 
 
+class DeclareCompletionView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsApplicant]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, application_id):
+        app = get_object_or_404(Application, pk=application_id, applicant=request.user)
+
+        if app.status != Application.Status.UNDER_CONSTRUCTION:
+            return Response(
+                {"detail": f"Cannot declare completion when status is {app.status}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        completion_date = request.data.get("completion_date")
+        if not completion_date:
+            return Response(
+                {"detail": "completion_date is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        photos = request.FILES.getlist("photos")
+        if len(photos) < 5:
+            return Response(
+                {"detail": f"At least 5 photos are required. Received: {len(photos)}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from datetime import timedelta
+
+        scheduled = timezone.now() + timedelta(days=7)
+        inspector = round_robin_inspector()
+
+        with transaction.atomic():
+            for f in photos:
+                if f.size == 0:
+                    return Response({"detail": f"File '{f.name}' cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+                if f.size > 20 * 1024 * 1024:
+                    return Response({"detail": f"File '{f.name}' exceeds 20MB."}, status=status.HTTP_400_BAD_REQUEST)
+
+                Document.objects.create(
+                    application=app,
+                    uploader=request.user,
+                    document_type=Document.DocumentType.COMPLETION_PHOTO,
+                    file_path=f,
+                    file_name=f.name,
+                    file_size_bytes=f.size,
+                    mime_type=getattr(f, "content_type", "image/jpeg"),
+                    validation_status=Document.ValidationStatus.ACCEPTED,
+                    is_current=True,
+                )
+
+            ApplicationHistory.objects.create(
+                application=app,
+                previous_status=app.status,
+                new_status=Application.Status.COMPLETION_DECLARED,
+                actor=request.user,
+                note=f"Completion declared. {len(photos)} photo(s) uploaded.",
+            )
+            app.status = Application.Status.COMPLETION_DECLARED
+            app.save(update_fields=["status"])
+
+            inspection = Inspection.objects.create(
+                application=app,
+                inspection_type=Inspection.InspectionType.FINAL_COMPLETION,
+                scheduled_date=scheduled,
+                assigned_inspector=inspector,
+                status=Inspection.Status.SCHEDULED,
+            )
+
+        Notification.objects.create(
+            recipient=request.user,
+            title="Completion Declared",
+            body=f"Completion declared for {app.arn}. Final inspection scheduled.",
+            notification_type="COMPLETION_DECLARED",
+            reference_id=str(app.id),
+            reference_type="APPLICATION",
+        )
+
+        return Response({
+            "application_id": str(app.id),
+            "arn": app.arn,
+            "status": app.status,
+            "completion_date": completion_date,
+            "photos_uploaded": len(photos),
+            "final_inspection": {
+                "inspection_id": str(inspection.id),
+                "scheduled_date": scheduled.isoformat(),
+                "assigned_inspector_name": inspector.full_name if inspector else None,
+            },
+        })
+
+
 class InspectionDetailView(APIView):
     authentication_classes = [JWTAuthentication]
 
@@ -435,7 +528,19 @@ class InspectionSubmitView(APIView):
                 reference_type="INSPECTION",
             )
 
-            if inspection.inspection_type == Inspection.InspectionType.FOUNDATION:
+            if inspection.inspection_type == Inspection.InspectionType.FINAL_COMPLETION:
+                seniors = get_user_model().objects.filter(role="SENIOR_OFFICER", is_active=True)
+                for senior in seniors:
+                    Notification.objects.create(
+                        recipient=senior,
+                        title="Completion Review Required",
+                        body=f"Final inspection passed for {app.arn}. Review required for certificate issuance.",
+                        notification_type="COMPLETION_REVIEW",
+                        reference_id=str(app.id),
+                        reference_type="APPLICATION",
+                    )
+
+            elif inspection.inspection_type == Inspection.InspectionType.FOUNDATION:
                 next_type = Inspection.InspectionType.STRUCTURAL_FRAME
             elif inspection.inspection_type == Inspection.InspectionType.STRUCTURAL_FRAME:
                 next_type = Inspection.InspectionType.FINAL_COMPLETION

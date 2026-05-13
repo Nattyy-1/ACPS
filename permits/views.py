@@ -14,9 +14,10 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from accounts.permissions import IsAdmin, IsAdminOrSeniorOfficer, IsApplicant, IsSeniorOfficer
 from applications.models import Application, ApplicationHistory, Document
+from inspections.models import Inspection
 from notifications.models import Notification
 from .models import Permit
-from .pdf_utils import generate_planning_consent_pdf, generate_construction_permit_pdf
+from .pdf_utils import generate_planning_consent_pdf, generate_construction_permit_pdf, generate_completion_certificate_pdf
 from .serializers import AuthenticatedPermitSerializer, PublicPermitSerializer
 
 
@@ -403,6 +404,167 @@ class SeniorRejectView(APIView):
             "status": app.status,
             "message": "Application rejected at final stage.",
         })
+
+
+class SeniorCompletionReviewView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsSeniorOfficer]
+
+    def get(self, request, application_id):
+        app = get_object_or_404(Application, pk=application_id)
+
+        completion_photos = app.documents.filter(
+            document_type=Document.DocumentType.COMPLETION_PHOTO,
+            is_current=True,
+        )
+        approved_docs = app.documents.filter(
+            document_type__in=[
+                Document.DocumentType.ARCHITECTURAL,
+                Document.DocumentType.STRUCTURAL,
+            ],
+            is_current=True,
+        )
+        final_inspection = app.inspections.filter(
+            inspection_type=Inspection.InspectionType.FINAL_COMPLETION
+        ).order_by("-created_at").first()
+
+        return Response({
+            "application_id": str(app.id),
+            "arn": app.arn,
+            "applicant": app.applicant.full_name,
+            "building_category": app.building_category,
+            "status": app.status,
+            "building_specs": {
+                "height_m": float(app.height_m),
+                "floors_above": app.floors_above,
+                "floors_below": app.floors_below,
+                "floor_area_sqm": float(app.floor_area_sqm),
+                "intended_use": app.intended_use,
+            },
+            "approved_plans": [
+                {"document_id": str(d.id), "document_type": d.document_type, "file_name": d.file_name}
+                for d in approved_docs
+            ],
+            "completion_photos": [
+                {"document_id": str(d.id), "file_name": d.file_name, "file_url": d.file_path.url if d.file_path else None}
+                for d in completion_photos
+            ],
+            "final_inspection": {
+                "inspection_id": str(final_inspection.id) if final_inspection else None,
+                "status": final_inspection.status if final_inspection else None,
+                "overall_result": final_inspection.overall_result if final_inspection else None,
+                "submitted_at": final_inspection.submitted_at.isoformat() if final_inspection and final_inspection.submitted_at else None,
+                "checklist_items": [
+                    {"item_text": item.item_text, "result": item.result, "notes": item.notes}
+                    for item in final_inspection.checklist_items.all()
+                ] if final_inspection else [],
+            } if final_inspection else None,
+        })
+
+
+class IssueCompletionCertificateView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsSeniorOfficer]
+
+    def post(self, request, application_id):
+        app = get_object_or_404(Application, pk=application_id)
+
+        if app.status != Application.Status.COMPLETION_DECLARED:
+            return Response(
+                {"detail": f"Cannot issue certificate when status is {app.status}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        final_inspection = app.inspections.filter(
+            inspection_type=Inspection.InspectionType.FINAL_COMPLETION,
+            status=Inspection.Status.PASSED,
+        ).first()
+        if not final_inspection:
+            return Response(
+                {"detail": "Final completion inspection must be passed before issuing certificate."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        year = datetime.date.today().year
+        prefix = f"CC-{year}-"
+        last = Permit.objects.filter(
+            permit_number__startswith=prefix, permit_type=Permit.PermitType.COMPLETION
+        ).order_by("permit_number").last()
+        next_num = int(last.permit_number.split("-")[-1]) + 1 if last else 1
+        permit_number = f"{prefix}{next_num:06d}"
+        issue_date = datetime.date.today()
+
+        qr_token = permit_number.replace("-", "").lower()
+        verify_url = f"{request.build_absolute_uri('/')[:-1]}/api/v1/verify/{permit_number}/"
+
+        with transaction.atomic():
+            permit = Permit.objects.create(
+                application=app,
+                permit_number=permit_number,
+                permit_type=Permit.PermitType.COMPLETION,
+                issued_by=request.user,
+                issue_date=issue_date,
+                expiry_date=issue_date,
+                qr_code_token=qr_token,
+                status=Permit.Status.ACTIVE,
+            )
+
+            pdf_buf = generate_completion_certificate_pdf(app, permit, verify_url)
+            file_name = f"completion_certificate_{permit_number}.pdf"
+            permit.document_path.save(file_name, pdf_buf, save=True)
+
+            Document.objects.create(
+                application=app,
+                uploader=request.user,
+                document_type="COMPLETION_CERTIFICATE",
+                file_path=permit.document_path,
+                file_name=file_name,
+                file_size_bytes=pdf_buf.tell(),
+                mime_type="application/pdf",
+                validation_status=Document.ValidationStatus.ACCEPTED,
+                is_current=True,
+            )
+
+            ApplicationHistory.objects.create(
+                application=app,
+                previous_status=app.status,
+                new_status=Application.Status.COMPLETED,
+                actor=request.user,
+                note=f"Completion certificate {permit_number} issued.",
+            )
+            app.status = Application.Status.COMPLETED
+            app.save(update_fields=["status"])
+
+        send_mail(
+            subject="Completion Certificate Issued",
+            message=(
+                f"Dear {app.applicant.full_name},\n\n"
+                f"Your completion certificate has been issued for {app.arn}.\n"
+                f"Certificate Number: {permit_number}\n\n"
+                f"Please log in to download the PDF.\n\n"
+                f"Congratulations on completing your project!\n"
+                f"Thank you."
+            ),
+            from_email=None,
+            recipient_list=[app.applicant.email],
+        )
+
+        Notification.objects.create(
+            recipient=app.applicant,
+            title="Completion Certificate Issued",
+            body=f"Completion certificate {permit_number} issued for {app.arn}.",
+            notification_type="CERTIFICATE_ISSUED",
+            reference_id=str(app.id),
+            reference_type="APPLICATION",
+        )
+
+        return Response({
+            "permit_number": permit_number,
+            "permit_type": "COMPLETION",
+            "issue_date": issue_date.isoformat(),
+            "application_status": app.status,
+            "document_url": permit.document_path.url if permit.document_path else None,
+        }, status=status.HTTP_201_CREATED)
 
 
 class PermitDetailView(APIView):
