@@ -81,8 +81,8 @@ class Task5CorsConfigurationTests(TestCase):
             settings.MIDDLEWARE,
         )
 
-    def test_cors_allowed_origins_configured(self):
-        self.assertTrue(len(settings.CORS_ALLOWED_ORIGINS) > 0)
+    def test_cors_all_origins_allowed(self):
+        self.assertTrue(settings.CORS_ALLOW_ALL_ORIGINS)
 
 
 class Task6LibraryImportsTests(TestCase):
