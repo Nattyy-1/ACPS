@@ -242,7 +242,7 @@ class ApplicationSubmitView(APIView):
                     "label": Document.DocumentType(dt).label,
                     "reason": "Not uploaded",
                 })
-            elif doc.validation_status != Document.ValidationStatus.ACCEPTED:
+            elif doc.validation_status == Document.ValidationStatus.REJECTED:
                 missing.append({
                     "document_type": dt,
                     "label": Document.DocumentType(dt).label,
