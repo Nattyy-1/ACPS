@@ -1,0 +1,50 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path(
+        "approvals/queue/",
+        views.ApprovalsQueueView.as_view(),
+        name="approvals-queue",
+    ),
+    path(
+        "approvals/<uuid:application_id>/",
+        views.ApprovalDetailView.as_view(),
+        name="approval-detail",
+    ),
+    path(
+        "approvals/completion-review/<uuid:application_id>/",
+        views.SeniorCompletionReviewView.as_view(),
+        name="completion-review",
+    ),
+    path(
+        "applications/<uuid:application_id>/issue-consent/",
+        views.IssueConsentView.as_view(),
+        name="issue-consent",
+    ),
+    path(
+        "applications/<uuid:application_id>/issue-permit/",
+        views.IssuePermitView.as_view(),
+        name="issue-permit",
+    ),
+    path(
+        "applications/<uuid:application_id>/issue-completion-certificate/",
+        views.IssueCompletionCertificateView.as_view(),
+        name="issue-completion-certificate",
+    ),
+    path(
+        "applications/<uuid:application_id>/reject-final/",
+        views.SeniorRejectView.as_view(),
+        name="reject-final",
+    ),
+    path(
+        "permits/<str:permit_number>/",
+        views.PermitDetailView.as_view(),
+        name="permit-detail",
+    ),
+    path(
+        "verify/<str:permit_number>/",
+        views.permit_verify_view,
+        name="permit-verify",
+    ),
+]

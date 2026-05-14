@@ -1,5 +1,135 @@
 from rest_framework import serializers
-from .models import Application
+from .models import Application, ApplicationHistory, Document, NeighborConsent
+
+
+class ApplicationListSerializer(serializers.ModelSerializer):
+    application_id = serializers.UUIDField(source="id")
+    applicant_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Application
+        fields = [
+            "application_id", "arn", "status", "building_category",
+            "calculated_fee", "subcity_id", "created_at",
+            "applicant_name",
+        ]
+
+    def get_applicant_name(self, obj):
+        return obj.applicant.full_name
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["calculated_fee"] = (
+            float(instance.calculated_fee) if instance.calculated_fee else None
+        )
+        return data
+
+
+class RequiredDocumentSerializer(serializers.Serializer):
+    document_type = serializers.CharField()
+    label = serializers.CharField()
+    uploaded = serializers.BooleanField()
+    accepted = serializers.BooleanField()
+    status = serializers.CharField(allow_null=True)
+
+
+class ApplicationHistorySerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApplicationHistory
+        fields = [
+            "id", "previous_status", "new_status", "note",
+            "actor_name", "created_at",
+        ]
+
+    def get_actor_name(self, obj):
+        return obj.actor.full_name if obj.actor else "System"
+
+
+class DocumentSerializer(serializers.ModelSerializer):
+    document_id = serializers.UUIDField(source="id")
+
+    class Meta:
+        model = Document
+        fields = [
+            "document_id", "document_type", "file_name", "file_size_bytes",
+            "mime_type", "validation_status", "rejection_reason",
+            "version_number", "is_current", "created_at",
+        ]
+
+
+class NeighborSerializer(serializers.ModelSerializer):
+    neighbor_id = serializers.UUIDField(source="id")
+
+    class Meta:
+        model = NeighborConsent
+        fields = [
+            "neighbor_id", "neighbor_name", "neighbor_phone",
+            "consent_file", "status", "created_at",
+        ]
+
+
+class NeighborCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NeighborConsent
+        fields = ["neighbor_name", "neighbor_phone", "consent_file"]
+
+    def validate_consent_file(self, value):
+        if value.size == 0:
+            raise serializers.ValidationError("File cannot be empty.")
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError("File size must not exceed 10MB.")
+        return value
+
+
+class ApplicationDetailSerializer(serializers.ModelSerializer):
+    application_id = serializers.UUIDField(source="id")
+    documents = DocumentSerializer(many=True, read_only=True)
+    neighbors = NeighborSerializer(many=True, read_only=True)
+    history = ApplicationHistorySerializer(many=True, read_only=True)
+    timeline = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Application
+        fields = [
+            "application_id", "arn", "building_category", "status",
+            "subcity_id", "woreda", "plot_address",
+            "plot_gps_lat", "plot_gps_lng",
+            "height_m", "floors_above", "floors_below", "floor_area_sqm",
+            "intended_use", "architect_name", "architect_license",
+            "contractor_name", "contractor_license",
+            "project_value_etb", "calculated_fee",
+            "assigned_officer", "revision_cycle",
+            "documents", "neighbors", "history", "timeline",
+            "created_at", "updated_at",
+        ]
+
+    def get_timeline(self, obj):
+        qs = obj.history.all()
+        return ApplicationHistorySerializer(qs, many=True).data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["calculated_fee"] = (
+            float(instance.calculated_fee) if instance.calculated_fee else None
+        )
+        data["plot_gps_lat"] = float(instance.plot_gps_lat)
+        data["plot_gps_lng"] = float(instance.plot_gps_lng)
+        data["height_m"] = float(instance.height_m)
+        data["floor_area_sqm"] = float(instance.floor_area_sqm)
+        data["project_value_etb"] = float(instance.project_value_etb)
+        data["assigned_officer"] = (
+            {
+                "id": str(instance.assigned_officer.id),
+                "full_name": instance.assigned_officer.full_name,
+            }
+            if instance.assigned_officer
+            else None
+        )
+        data["comments"] = []
+        data["inspections"] = []
+        return data
 
 
 class ApplicationCreateSerializer(serializers.ModelSerializer):
@@ -91,4 +221,81 @@ class ApplicationUpdateSerializer(serializers.ModelSerializer):
             "calculated_fee": float(instance.calculated_fee)
             if instance.calculated_fee
             else None,
+        }
+
+
+class ApplicationDocumentSerializer(serializers.Serializer):
+    document_type = serializers.ChoiceField(
+        choices=[
+            "ARCHITECTURAL",
+            "STRUCTURAL",
+            "SANITARY",
+            "ELECTRICAL",
+            "SOIL_TEST",
+            "PROFESSIONAL_LICENSE",
+            "FIRE_SAFETY",
+        ]
+    )
+    file = serializers.FileField()
+
+    ALLOWED_MIME_TYPES = {
+        "application/pdf",
+        "application/acad",
+        "application/x-autocad",
+        "image/vnd.dwg",
+        "application/dwg",
+    }
+
+    def validate_file(self, value):
+        if value.size == 0:
+            raise serializers.ValidationError("File cannot be empty.")
+        if value.size > 20 * 1024 * 1024:
+            raise serializers.ValidationError("File size must not exceed 20MB.")
+        if value.content_type not in self.ALLOWED_MIME_TYPES:
+            raise serializers.ValidationError("File must be PDF or DWG.")
+        return value
+
+    def create(self, validated_data):
+        file = validated_data["file"]
+        user = self.context["request"].user
+        application = self.context["application"]
+
+        Document.objects.filter(
+            application=application,
+            document_type=validated_data["document_type"],
+            is_current=True,
+        ).update(is_current=False)
+
+        latest = (
+            Document.objects.filter(
+                application=application,
+                document_type=validated_data["document_type"],
+            )
+            .order_by("-version_number")
+            .first()
+        )
+        next_version = (latest.version_number + 1) if latest else 1
+
+        doc = Document.objects.create(
+            application=application,
+            uploader=user,
+            document_type=validated_data["document_type"],
+            file_path=file,
+            file_name=file.name,
+            file_size_bytes=file.size,
+            mime_type=file.content_type,
+            version_number=next_version,
+            is_current=True,
+        )
+        return doc
+
+    def to_representation(self, instance):
+        return {
+            "document_id": str(instance.id),
+            "document_type": instance.document_type,
+            "file_name": instance.file_name,
+            "file_size_bytes": instance.file_size_bytes,
+            "mime_type": instance.mime_type,
+            "version_number": instance.version_number,
+            "status": instance.validation_status,
         }

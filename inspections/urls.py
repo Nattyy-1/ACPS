@@ -1,0 +1,66 @@
+from django.urls import path
+from .views import (
+    CommenceConstructionView,
+    DeclareCompletionView,
+    ApplicationInspectionListView,
+    InspectorScheduleView,
+    InspectionDetailView,
+    InspectionStartView,
+    InspectionChecklistUpdateView,
+    InspectionPhotoUploadView,
+    InspectionSubmitView,
+    RequestReinspectionView,
+)
+
+urlpatterns = [
+    path(
+        "applications/<uuid:application_id>/commence/",
+        CommenceConstructionView.as_view(),
+        name="commence-construction",
+    ),
+    path(
+        "applications/<uuid:application_id>/declare-completion/",
+        DeclareCompletionView.as_view(),
+        name="declare-completion",
+    ),
+    path(
+        "applications/<uuid:application_id>/inspections/",
+        ApplicationInspectionListView.as_view(),
+        name="application-inspections",
+    ),
+    path(
+        "applications/<uuid:application_id>/inspections/<uuid:inspection_id>/request-reinspection/",
+        RequestReinspectionView.as_view(),
+        name="request-reinspection",
+    ),
+    path(
+        "inspections/my-schedule/",
+        InspectorScheduleView.as_view(),
+        name="inspector-schedule",
+    ),
+    path(
+        "inspections/<uuid:inspection_id>/",
+        InspectionDetailView.as_view(),
+        name="inspection-detail",
+    ),
+    path(
+        "inspections/<uuid:inspection_id>/start/",
+        InspectionStartView.as_view(),
+        name="inspection-start",
+    ),
+    path(
+        "inspections/<uuid:inspection_id>/checklist/",
+        InspectionChecklistUpdateView.as_view(),
+        name="inspection-checklist",
+    ),
+    path(
+        "inspections/<uuid:inspection_id>/photos/",
+        InspectionPhotoUploadView.as_view(),
+        name="inspection-photos",
+    ),
+    path(
+        "inspections/<uuid:inspection_id>/submit/",
+        InspectionSubmitView.as_view(),
+        name="inspection-submit",
+    ),
+]
