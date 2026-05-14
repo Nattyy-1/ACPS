@@ -1,0 +1,4466 @@
+openapi: "3.0.3"
+info:
+  title: Automated Construction Permit System (ACPS) API
+  description: |
+    Backend API for the Ethiopian Automated Construction Permit System.
+    Covers end-to-end permit lifecycle: application → neighbor consent → payment →
+    technical review → senior approval → permit issuance → construction →
+    inspection → completion certificate.
+
+    Base URL: `/api/v1/`
+    Authentication: JWT Bearer tokens via `Authorization: Bearer <token>` header.
+    Obtained from `POST /api/v1/auth/login/`.
+  version: "1.0.0"
+  contact:
+    name: ACPS Development Team
+
+servers:
+  - url: /api/v1
+    description: API v1 base path
+
+tags:
+  - name: Authentication
+    description: Registration, login, token refresh, password reset
+  - name: Users
+    description: Profile management and admin user administration
+  - name: Applications
+    description: Permit application CRUD, document upload, submission
+  - name: Neighbors
+    description: Neighbor consent management
+  - name: Payments
+    description: Invoice, payment demonstration, receipts
+  - name: Reviews
+    description: Technical review workflow, comments, decisions
+  - name: Approvals
+    description: Senior officer approvals, consent/permit/certificate issuance
+  - name: Permits
+    description: Public permit verification and detail
+  - name: Inspections
+    description: Construction commencement, inspection scheduling, digital site inspection
+  - name: Notifications
+    description: User notification list and read status
+  - name: Administration
+    description: Admin dashboard stats, config, audit log, reports, signatures
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ─────────────────────────────────────────────────
+    #  ACCOUNTS / AUTH SCHEMAS
+    # ─────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [full_name, phone, email, password]
+      properties:
+        full_name:
+          type: string
+          example: "Abebe Kebede"
+        phone:
+          type: string
+          example: "+251911111111"
+        email:
+          type: string
+          format: email
+          example: "abebe@example.com"
+        password:
+          type: string
+          minLength: 8
+          example: "securePass123"
+
+    RegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Account created"
+        user_id:
+          type: string
+          format: uuid
+          example: "a1b2c3d4-..."
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        access:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+        refresh:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+        role:
+          type: string
+          enum: [APPLICANT, REVIEW_OFFICER, INSPECTOR, SENIOR_OFFICER, ADMIN]
+        user_id:
+          type: string
+          format: uuid
+
+    RefreshRequest:
+      type: object
+      required: [refresh]
+      properties:
+        refresh:
+          type: string
+
+    RefreshResponse:
+      type: object
+      properties:
+        access:
+          type: string
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    ForgotPasswordResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Password reset link sent to your email"
+
+    ResetPasswordRequest:
+      type: object
+      required: [uid, token, new_password]
+      properties:
+        uid:
+          type: string
+        token:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+
+    ResetPasswordResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Password has been reset successfully"
+
+    # ─────────────────────────────────────────────────
+    #  USER SCHEMAS
+    # ─────────────────────────────────────────────────
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        full_name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [APPLICANT, REVIEW_OFFICER, INSPECTOR, SENIOR_OFFICER, ADMIN]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        subcity_id:
+          type: string
+        land_certificate_number:
+          type: string
+        tin:
+          type: string
+
+    UserProfileUpdate:
+      type: object
+      properties:
+        full_name:
+          type: string
+        phone:
+          type: string
+        subcity_id:
+          type: string
+        land_certificate_number:
+          type: string
+        tin:
+          type: string
+
+    VaultDocumentUploadResponse:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, REJECTED]
+        validation_result:
+          type: string
+          example: "valid"
+
+    VaultDocument:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        document_type:
+          type: string
+        file_name:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, REJECTED]
+        rejection_reason:
+          type: string
+        version_number:
+          type: integer
+        uploaded_at:
+          type: string
+          format: date-time
+
+    VaultDocumentListResponse:
+      type: object
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/VaultDocument"
+
+    AdminUserCreateRequest:
+      type: object
+      required: [full_name, email, phone, role]
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [REVIEW_OFFICER, INSPECTOR, SENIOR_OFFICER, ADMIN]
+        subcity_id:
+          type: string
+
+    AdminUserCreateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        full_name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+        subcity_id:
+          type: string
+        password:
+          type: string
+          description: Auto-generated temporary password
+
+    AdminUserDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        full_name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        subcity_id:
+          type: string
+        land_certificate_number:
+          type: string
+        tin:
+          type: string
+        is_active:
+          type: boolean
+        date_joined:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+
+    DeactivateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+
+    # ─────────────────────────────────────────────────
+    #  APPLICATION SCHEMAS
+    # ─────────────────────────────────────────────────
+    ApplicationCreateRequest:
+      type: object
+      required:
+        - intended_use
+        - height_m
+        - floors_above
+        - floors_below
+        - floor_area_sqm
+        - plot_address
+        - plot_gps_lat
+        - plot_gps_lng
+        - subcity_id
+        - woreda
+        - architect_name
+        - architect_license
+        - project_value_etb
+      properties:
+        intended_use:
+          type: string
+          example: "Residential"
+        height_m:
+          type: number
+          format: float
+          example: 12.5
+        floors_above:
+          type: integer
+          example: 3
+        floors_below:
+          type: integer
+          example: 1
+        floor_area_sqm:
+          type: number
+          format: float
+          example: 250.0
+        plot_address:
+          type: string
+          example: "123 Main St"
+        plot_gps_lat:
+          type: number
+          format: float
+          example: 9.03
+        plot_gps_lng:
+          type: number
+          format: float
+          example: 38.74
+        subcity_id:
+          type: string
+          example: "SC-01"
+        woreda:
+          type: string
+          example: "Woreda 1"
+        architect_name:
+          type: string
+          example: "Arch A"
+        architect_license:
+          type: string
+          example: "AL-001"
+        contractor_name:
+          type: string
+          example: "Contractor C"
+        contractor_license:
+          type: string
+          example: "CL-001"
+        project_value_etb:
+          type: number
+          format: float
+          example: 1500000
+
+    ApplicationCreateResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+          example: "ACPS-2026-000001"
+        status:
+          type: string
+          example: "DRAFT"
+        building_category:
+          type: string
+          enum: [A, B, C]
+        calculated_fee:
+          type: number
+          format: float
+          nullable: true
+
+    ApplicationListResponseItem:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        status:
+          type: string
+        building_category:
+          type: string
+        calculated_fee:
+          type: number
+          format: float
+          nullable: true
+        subcity_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        applicant_name:
+          type: string
+
+    ApplicationUpdateRequest:
+      type: object
+      properties:
+        intended_use:
+          type: string
+        height_m:
+          type: number
+          format: float
+        floors_above:
+          type: integer
+        floors_below:
+          type: integer
+        floor_area_sqm:
+          type: number
+          format: float
+        plot_address:
+          type: string
+        plot_gps_lat:
+          type: number
+          format: float
+        plot_gps_lng:
+          type: number
+          format: float
+        subcity_id:
+          type: string
+        woreda:
+          type: string
+        architect_name:
+          type: string
+        architect_license:
+          type: string
+        contractor_name:
+          type: string
+        contractor_license:
+          type: string
+        project_value_etb:
+          type: number
+          format: float
+
+    ApplicationUpdateResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        status:
+          type: string
+        building_category:
+          type: string
+        calculated_fee:
+          type: number
+          format: float
+          nullable: true
+
+    ApplicationDetailResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        building_category:
+          type: string
+        status:
+          type: string
+        subcity_id:
+          type: string
+        woreda:
+          type: string
+        plot_address:
+          type: string
+        plot_gps_lat:
+          type: number
+          format: float
+        plot_gps_lng:
+          type: number
+          format: float
+        height_m:
+          type: number
+          format: float
+        floors_above:
+          type: integer
+        floors_below:
+          type: integer
+        floor_area_sqm:
+          type: number
+          format: float
+        intended_use:
+          type: string
+        architect_name:
+          type: string
+        architect_license:
+          type: string
+        contractor_name:
+          type: string
+        contractor_license:
+          type: string
+        project_value_etb:
+          type: number
+          format: float
+        calculated_fee:
+          type: number
+          format: float
+          nullable: true
+        assigned_officer:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: string
+        revision_cycle:
+          type: integer
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentItem"
+        neighbors:
+          type: array
+          items:
+            $ref: "#/components/schemas/NeighborResponse"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineItem"
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineItem"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DocumentItem:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        document_type:
+          type: string
+        file_name:
+          type: string
+        file_size_bytes:
+          type: integer
+        mime_type:
+          type: string
+        validation_status:
+          type: string
+          enum: [PENDING, ACCEPTED, REJECTED]
+        rejection_reason:
+          type: string
+        version_number:
+          type: integer
+        is_current:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    FeeBreakdownResponse:
+      type: object
+      properties:
+        project_value_etb:
+          type: number
+          format: float
+        calculation_method:
+          type: string
+          enum: [FORMULA, TIERED, FALLBACK]
+        base_fee:
+          type: number
+          format: float
+        fixed_fee:
+          type: number
+          format: float
+        base_description:
+          type: string
+        fixed_description:
+          type: string
+        total:
+          type: number
+          format: float
+
+    SubmitResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        status:
+          type: string
+          example: "PAYMENT_PENDING"
+        invoice_id:
+          type: string
+        amount_etb:
+          type: number
+          format: float
+
+    SubmitErrorMissingDocs:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "Completeness check failed."
+        missing_documents:
+          type: array
+          items:
+            type: object
+            properties:
+              document_type:
+                type: string
+              label:
+                type: string
+              reason:
+                type: string
+
+    TimelineItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        previous_status:
+          type: string
+        new_status:
+          type: string
+        note:
+          type: string
+        actor_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    RequiredDocumentItem:
+      type: object
+      properties:
+        document_type:
+          type: string
+        label:
+          type: string
+        uploaded:
+          type: boolean
+        accepted:
+          type: boolean
+        status:
+          type: string
+          nullable: true
+
+    ApplicationDocumentUploadResponse:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        document_type:
+          type: string
+        file_name:
+          type: string
+        file_size_bytes:
+          type: integer
+        mime_type:
+          type: string
+        version_number:
+          type: integer
+        status:
+          type: string
+
+    # ─────────────────────────────────────────────────
+    #  NEIGHBOR SCHEMAS
+    # ─────────────────────────────────────────────────
+    NeighborCreateRequest:
+      type: object
+      required: [neighbor_name, neighbor_phone, consent_file]
+      properties:
+        neighbor_name:
+          type: string
+        neighbor_phone:
+          type: string
+        consent_file:
+          type: string
+          format: binary
+          description: Scanned consent form (PDF/JPEG/PNG, max 10MB)
+
+    NeighborCreateResponse:
+      type: object
+      properties:
+        neighbor_id:
+          type: string
+          format: uuid
+        neighbor_name:
+          type: string
+        neighbor_phone:
+          type: string
+        consent_file:
+          type: string
+        status:
+          type: string
+          example: "UPLOADED"
+        created_at:
+          type: string
+          format: date-time
+
+    NeighborResponse:
+      type: object
+      properties:
+        neighbor_id:
+          type: string
+          format: uuid
+        neighbor_name:
+          type: string
+        neighbor_phone:
+          type: string
+        consent_file:
+          type: string
+        status:
+          type: string
+          enum: [UPLOADED, VERIFIED]
+        created_at:
+          type: string
+          format: date-time
+
+    # ─────────────────────────────────────────────────
+    #  PAYMENT SCHEMAS
+    # ─────────────────────────────────────────────────
+    InvoiceDetailResponse:
+      type: object
+      properties:
+        invoice_id:
+          type: string
+        amount_etb:
+          type: number
+          format: float
+        status:
+          type: string
+          enum: [PENDING, AWAITING_MANUAL_CONFIRMATION, CONFIRMED, EXPIRED, ARCHIVED]
+        payment_method:
+          type: string
+          nullable: true
+        available_methods:
+          type: array
+          items:
+            type: string
+            enum: [TELEBIRR, CBEBIRR, BANK_TRANSFER]
+        application_arn:
+          type: string
+        application_id:
+          type: string
+          format: uuid
+        fee_breakdown:
+          $ref: "#/components/schemas/FeeBreakdownResponse"
+        created_at:
+          type: string
+          format: date-time
+
+    InvoicePayRequest:
+      type: object
+      required: [payment_method]
+      properties:
+        payment_method:
+          type: string
+          enum: [TELEBIRR, CBEBIRR, BANK_TRANSFER]
+
+    InvoicePayResponseDigital:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "CONFIRMED"
+        transaction_reference:
+          type: string
+        receipt_url:
+          type: string
+          nullable: true
+        application_status:
+          type: string
+
+    InvoicePayResponseBankTransfer:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "AWAITING_MANUAL_CONFIRMATION"
+        bank_details:
+          type: object
+          properties:
+            bank_name:
+              type: string
+            account_name:
+              type: string
+            account_number:
+              type: string
+            branch:
+              type: string
+            reference_note:
+              type: string
+        message:
+          type: string
+
+    BankReceiptUploadResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+        receipt_url:
+          type: string
+
+    InvoiceConfirmResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        transaction_reference:
+          type: string
+        application_status:
+          type: string
+
+    PaymentListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              payment_id:
+                type: string
+                format: uuid
+              invoice_id:
+                type: string
+              arn:
+                type: string
+              applicant:
+                type: string
+              amount_etb:
+                type: number
+                format: float
+              method:
+                type: string
+              status:
+                type: string
+              transaction_reference:
+                type: string
+              paid_at:
+                type: string
+                format: date-time
+                nullable: true
+              created_at:
+                type: string
+                format: date-time
+
+    PaymentExpiryResponse:
+      type: object
+      properties:
+        expired_count:
+          type: integer
+
+    # ─────────────────────────────────────────────────
+    #  REVIEW SCHEMAS
+    # ─────────────────────────────────────────────────
+    AssignReviewerRequest:
+      type: object
+      properties:
+        officer_id:
+          type: string
+          format: uuid
+          description: Optional explicit reviewer ID. If omitted, round-robin auto-assign.
+
+    AssignReviewerResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        assigned_officer:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: string
+
+    ReviewQueueItem:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        status:
+          type: string
+        building_category:
+          type: string
+        subcity_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        days_open:
+          type: integer
+        urgency:
+          type: string
+          enum: [normal, warning, critical]
+        revision_cycle:
+          type: integer
+
+    CommentCreateRequest:
+      type: object
+      required: [category, content]
+      properties:
+        document:
+          type: string
+          format: uuid
+          description: Optional - ID of the document being commented on
+        category:
+          type: string
+          enum: [MISSING_INFO, DRAWING_ERROR, CODE_NON_COMPLIANCE, CLARIFICATION, OTHER]
+        content:
+          type: string
+
+    CommentResponse:
+      type: object
+      properties:
+        comment_id:
+          type: string
+          format: uuid
+        application:
+          type: string
+          format: uuid
+        document:
+          type: string
+          format: uuid
+          nullable: true
+        author:
+          type: string
+          format: uuid
+        author_name:
+          type: string
+        document_name:
+          type: string
+          nullable: true
+        category:
+          type: string
+        content:
+          type: string
+        resolution_status:
+          type: string
+          enum: [OPEN, RESOLVED, ESCALATED]
+        resolved_by:
+          type: string
+          format: uuid
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CommentResolveRequest:
+      type: object
+      required: [resolution_status]
+      properties:
+        resolution_status:
+          type: string
+          enum: [RESOLVED, ESCALATED]
+
+    ReviewDecisionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        notes:
+          type: string
+          description: Required if REJECTED (min 100 chars)
+        regulation_citation:
+          type: string
+          description: Required if REJECTED
+
+    ReviewDecisionResponse:
+      type: object
+      properties:
+        decision:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+
+    SLAStatusResponse:
+      type: object
+      properties:
+        sla_configs:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              stage:
+                type: string
+              target_days:
+                type: integer
+              reminder_days:
+                type: integer
+              escalation_days:
+                type: integer
+        breaches:
+          type: array
+          items:
+            type: object
+            properties:
+              application_id:
+                type: string
+                format: uuid
+              arn:
+                type: string
+              status:
+                type: string
+              assigned_officer:
+                type: string
+              days_open:
+                type: integer
+              target_days:
+                type: integer
+              breached:
+                type: boolean
+        breach_count:
+          type: integer
+
+    # ─────────────────────────────────────────────────
+    #  APPROVAL / PERMIT SCHEMAS
+    # ─────────────────────────────────────────────────
+    ApprovalsQueueItem:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        applicant_name:
+          type: string
+        building_category:
+          type: string
+        subcity_id:
+          type: string
+        status:
+          type: string
+        revision_cycle:
+          type: integer
+        comments_count:
+          type: integer
+        unresolved_comments:
+          type: integer
+        assigned_reviewer:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ApprovalDetailResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        applicant:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: string
+            email:
+              type: string
+            phone:
+              type: string
+        building_category:
+          type: string
+        status:
+          type: string
+        subcity_id:
+          type: string
+        woreda:
+          type: string
+        plot_address:
+          type: string
+        plot_gps_lat:
+          type: number
+          format: float
+        plot_gps_lng:
+          type: number
+          format: float
+        height_m:
+          type: number
+          format: float
+        floors_above:
+          type: integer
+        floors_below:
+          type: integer
+        floor_area_sqm:
+          type: number
+          format: float
+        intended_use:
+          type: string
+        architect_name:
+          type: string
+        architect_license:
+          type: string
+        project_value_etb:
+          type: number
+          format: float
+        calculated_fee:
+          type: number
+          format: float
+          nullable: true
+        revision_cycle:
+          type: integer
+        assigned_reviewer:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: string
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              document_id:
+                type: string
+                format: uuid
+              document_type:
+                type: string
+              file_name:
+                type: string
+              validation_status:
+                type: string
+              version_number:
+                type: integer
+        comments:
+          type: array
+          items:
+            type: object
+            properties:
+              comment_id:
+                type: string
+                format: uuid
+              category:
+                type: string
+              content:
+                type: string
+              author_name:
+                type: string
+              resolution_status:
+                type: string
+              resolved_at:
+                type: string
+                format: date-time
+                nullable: true
+              created_at:
+                type: string
+                format: date-time
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              previous_status:
+                type: string
+              new_status:
+                type: string
+              note:
+                type: string
+              actor_name:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    IssueConsentResponse:
+      type: object
+      properties:
+        permit_number:
+          type: string
+          example: "PC-2026-000001"
+        permit_type:
+          type: string
+          example: "PLANNING_CONSENT"
+        issue_date:
+          type: string
+          format: date
+        expiry_date:
+          type: string
+          format: date
+        application_status:
+          type: string
+          example: "CONSENT_ISSUED"
+        document_url:
+          type: string
+          nullable: true
+
+    IssuePermitResponse:
+      type: object
+      properties:
+        permit_number:
+          type: string
+          example: "CP-2026-000001"
+        permit_type:
+          type: string
+          example: "CONSTRUCTION"
+        issue_date:
+          type: string
+          format: date
+        expiry_date:
+          type: string
+          format: date
+        application_status:
+          type: string
+          example: "PERMIT_ISSUED"
+        document_url:
+          type: string
+          nullable: true
+
+    IssueCompletionCertificateResponse:
+      type: object
+      properties:
+        permit_number:
+          type: string
+          example: "CC-2026-000001"
+        permit_type:
+          type: string
+          example: "COMPLETION"
+        issue_date:
+          type: string
+          format: date
+        application_status:
+          type: string
+          example: "COMPLETED"
+        document_url:
+          type: string
+          nullable: true
+
+    SeniorRejectRequest:
+      type: object
+      required: [reason, regulation_citation]
+      properties:
+        reason:
+          type: string
+          minLength: 100
+        regulation_citation:
+          type: string
+
+    SeniorRejectResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "REJECTED"
+        message:
+          type: string
+
+    PublicPermitResponse:
+      type: object
+      properties:
+        permit_number:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, ARCHIVED]
+        issue_date:
+          type: string
+          format: date
+        expiry_date:
+          type: string
+          format: date
+
+    AuthenticatedPermitResponse:
+      allOf:
+        - $ref: "#/components/schemas/PublicPermitResponse"
+        - type: object
+          properties:
+            permit_id:
+              type: string
+              format: uuid
+            permit_type:
+              type: string
+            application_id:
+              type: string
+              format: uuid
+            arn:
+              type: string
+            issued_by:
+              type: string
+              format: uuid
+            plot_address:
+              type: string
+            subcity_id:
+              type: string
+            building_category:
+              type: string
+            document_path:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+
+    CompletionReviewResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        applicant:
+          type: string
+        building_category:
+          type: string
+        status:
+          type: string
+        building_specs:
+          type: object
+          properties:
+            height_m:
+              type: number
+              format: float
+            floors_above:
+              type: integer
+            floors_below:
+              type: integer
+            floor_area_sqm:
+              type: number
+              format: float
+            intended_use:
+              type: string
+        approved_plans:
+          type: array
+          items:
+            type: object
+            properties:
+              document_id:
+                type: string
+                format: uuid
+              document_type:
+                type: string
+              file_name:
+                type: string
+        completion_photos:
+          type: array
+          items:
+            type: object
+            properties:
+              document_id:
+                type: string
+                format: uuid
+              file_name:
+                type: string
+              file_url:
+                type: string
+                nullable: true
+        final_inspection:
+          type: object
+          nullable: true
+          properties:
+            inspection_id:
+              type: string
+              format: uuid
+              nullable: true
+            status:
+              type: string
+              nullable: true
+            overall_result:
+              type: string
+              nullable: true
+            submitted_at:
+              type: string
+              format: date-time
+              nullable: true
+            checklist_items:
+              type: array
+              items:
+                type: object
+                properties:
+                  item_text:
+                    type: string
+                  result:
+                    type: string
+                  notes:
+                    type: string
+
+    # ─────────────────────────────────────────────────
+    #  INSPECTION SCHEMAS
+    # ─────────────────────────────────────────────────
+    CommenceRequest:
+      type: object
+      required: [start_date, contractor_name, contractor_license, supervisor_name, supervisor_phone]
+      properties:
+        start_date:
+          type: string
+          format: date
+        contractor_name:
+          type: string
+        contractor_license:
+          type: string
+        supervisor_name:
+          type: string
+        supervisor_phone:
+          type: string
+
+    CommenceResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        status:
+          type: string
+          example: "UNDER_CONSTRUCTION"
+        contractor_name:
+          type: string
+        contractor_license:
+          type: string
+        supervisor_name:
+          type: string
+        supervisor_phone:
+          type: string
+        start_date:
+          type: string
+          format: date
+        inspections:
+          type: array
+          items:
+            type: object
+            properties:
+              inspection_id:
+                type: string
+                format: uuid
+              inspection_type:
+                type: string
+              scheduled_date:
+                type: string
+                format: date-time
+              assigned_inspector_name:
+                type: string
+                nullable: true
+
+    DeclareCompletionResponse:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        arn:
+          type: string
+        status:
+          type: string
+          example: "COMPLETION_DECLARED"
+        completion_date:
+          type: string
+          format: date
+        photos_uploaded:
+          type: integer
+        final_inspection:
+          type: object
+          properties:
+            inspection_id:
+              type: string
+              format: uuid
+            scheduled_date:
+              type: string
+              format: date-time
+            assigned_inspector_name:
+              type: string
+              nullable: true
+
+    InspectionResponse:
+      type: object
+      properties:
+        inspection_id:
+          type: string
+          format: uuid
+        inspection_type:
+          type: string
+        scheduled_date:
+          type: string
+          format: date-time
+        assigned_inspector:
+          type: string
+          format: uuid
+          nullable: true
+        assigned_inspector_name:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [SCHEDULED, IN_PROGRESS, PASSED, FAILED]
+        start_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        overall_result:
+          type: string
+        failure_summary:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        checklist_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistItem"
+        photos:
+          type: array
+          items:
+            $ref: "#/components/schemas/InspectionPhoto"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ChecklistItem:
+      type: object
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        item_text:
+          type: string
+        result:
+          type: string
+          enum: [PASS, FAIL, NA, ""]
+        notes:
+          type: string
+        item_template:
+          type: string
+          format: uuid
+          nullable: true
+
+    InspectionPhoto:
+      type: object
+      properties:
+        photo_id:
+          type: string
+          format: uuid
+        file:
+          type: string
+        taken_at:
+          type: string
+          format: date-time
+
+    InspectorScheduleItem:
+      type: object
+      properties:
+        inspection_id:
+          type: string
+          format: uuid
+        inspection_type:
+          type: string
+        inspection_type_label:
+          type: string
+        scheduled_date:
+          type: string
+          format: date-time
+        status:
+          type: string
+        application:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            arn:
+              type: string
+            plot_address:
+              type: string
+            subcity_id:
+              type: string
+            woreda:
+              type: string
+            plot_gps_lat:
+              type: number
+              format: float
+            plot_gps_lng:
+              type: number
+              format: float
+            building_category:
+              type: string
+            contractor_name:
+              type: string
+            supervisor_name:
+              type: string
+            supervisor_phone:
+              type: string
+
+    InspectionStartResponse:
+      type: object
+      properties:
+        inspection_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: "IN_PROGRESS"
+        start_timestamp:
+          type: string
+          format: date-time
+
+    ChecklistUpdateRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [item_id]
+            properties:
+              item_id:
+                type: string
+                format: uuid
+              result:
+                type: string
+                enum: [PASS, FAIL, NA]
+              notes:
+                type: string
+
+    ChecklistUpdateResponse:
+      type: object
+      properties:
+        checklist_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistItem"
+
+    InspectionSubmitRequest:
+      type: object
+      required: [overall_result]
+      properties:
+        overall_result:
+          type: string
+          enum: [PASSED, FAILED]
+        failure_summary:
+          type: string
+          description: Required if FAILED (min 50 chars)
+
+    InspectionSubmitResponse:
+      type: object
+      properties:
+        inspection_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        overall_result:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+
+    ReinspectionRequest:
+      type: object
+      required: [corrections_made]
+      properties:
+        corrections_made:
+          type: string
+
+    ReinspectionResponse:
+      type: object
+      properties:
+        reinspection_id:
+          type: string
+          format: uuid
+        inspection_type:
+          type: string
+          example: "RE_INSPECTION"
+        scheduled_date:
+          type: string
+          format: date-time
+        assigned_inspector_name:
+          type: string
+          nullable: true
+        corrections_made:
+          type: string
+
+    # ─────────────────────────────────────────────────
+    #  NOTIFICATION SCHEMAS
+    # ─────────────────────────────────────────────────
+    NotificationListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        unread_count:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              notification_id:
+                type: string
+                format: uuid
+              title:
+                type: string
+              body:
+                type: string
+              notification_type:
+                type: string
+              reference_id:
+                type: string
+              reference_type:
+                type: string
+              is_read:
+                type: boolean
+              created_at:
+                type: string
+                format: date-time
+
+    NotificationReadResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "read"
+
+    NotificationReadAllResponse:
+      type: object
+      properties:
+        marked_read:
+          type: integer
+
+    # ─────────────────────────────────────────────────
+    #  ADMIN / CONFIG SCHEMAS
+    # ─────────────────────────────────────────────────
+    AdminStatsResponse:
+      type: object
+      properties:
+        total_applications:
+          type: integer
+        applications_by_status:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+        average_days_per_stage:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+        sla_breach_count:
+          type: integer
+        payment_volume:
+          type: object
+          properties:
+            total_etb:
+              type: number
+              format: float
+            total_confirmed:
+              type: integer
+            pending_count:
+              type: integer
+        completed_inspections:
+          type: integer
+
+    AuditLogResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              history_id:
+                type: string
+                format: uuid
+              application_id:
+                type: string
+                format: uuid
+              arn:
+                type: string
+              previous_status:
+                type: string
+              new_status:
+                type: string
+              actor_name:
+                type: string
+              actor_id:
+                type: string
+                format: uuid
+                nullable: true
+              note:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+
+    FeeTier:
+      type: object
+      required: [min_value_etb, fee_percentage]
+      properties:
+        min_value_etb:
+          type: number
+          format: float
+        max_value_etb:
+          type: number
+          format: float
+          nullable: true
+        fee_percentage:
+          type: number
+          format: float
+        fixed_fee_etb:
+          type: number
+          format: float
+
+    FeeScheduleResponse:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          min_value_etb:
+            type: number
+            format: float
+          max_value_etb:
+            type: number
+            format: float
+            nullable: true
+          fee_percentage:
+            type: number
+            format: float
+          fixed_fee_etb:
+            type: number
+            format: float
+
+    FeeScheduleUpdateRequest:
+      type: object
+      required: [tiers]
+      properties:
+        tiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeeTier"
+
+    SLAConfigItem:
+      type: object
+      required: [stage, target_days, reminder_days, escalation_days]
+      properties:
+        stage:
+          type: string
+        target_days:
+          type: integer
+        reminder_days:
+          type: integer
+        escalation_days:
+          type: integer
+
+    SLAConfigResponse:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          stage:
+            type: string
+          target_days:
+            type: integer
+          reminder_days:
+            type: integer
+          escalation_days:
+            type: integer
+
+    SLAConfigUpdateRequest:
+      type: object
+      required: [configs]
+      properties:
+        configs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SLAConfigItem"
+
+    ChecklistTemplateItem:
+      type: object
+      required: [item_text]
+      properties:
+        item_text:
+          type: string
+        order:
+          type: integer
+
+    ChecklistTemplateResponse:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          inspection_type:
+            type: string
+          item_text:
+            type: string
+          order:
+            type: integer
+
+    ChecklistTemplateUpdateRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistTemplateItem"
+
+    NotificationTemplateItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        notification_type:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+
+    NotificationTemplateUpsertRequest:
+      type: object
+      required: [notification_type, subject, body]
+      properties:
+        notification_type:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+
+    NotificationTemplateUpsertResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+        notification_type:
+          type: string
+
+    SignatureResponse:
+      type: object
+      properties:
+        officer_id:
+          type: string
+          format: uuid
+        officer_name:
+          type: string
+        signature_url:
+          type: string
+          nullable: true
+        uploaded_at:
+          type: string
+          format: date-time
+
+    SignatureUploadResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+        officer_id:
+          type: string
+          format: uuid
+        officer_name:
+          type: string
+        signature_url:
+          type: string
+          nullable: true
+
+    ConfigUpdateResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    ErrorResponseWithMissing:
+      type: object
+      properties:
+        detail:
+          type: string
+        missing_documents:
+          type: array
+          items:
+            type: object
+            properties:
+              document_type:
+                type: string
+              label:
+                type: string
+              reason:
+                type: string
+
+paths:
+  # ============================================================
+  #  AUTHENTICATION
+  # ============================================================
+  /auth/register/:
+    post:
+      tags: [Authentication]
+      summary: Register a new applicant account
+      description: Creates an applicant account. Activation is immediate.
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login/:
+    post:
+      tags: [Authentication]
+      summary: Login with email and password
+      description: Returns JWT access token, refresh token, role, and user_id.
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/refresh/:
+    post:
+      tags: [Authentication]
+      summary: Refresh JWT access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: New access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+        "401":
+          description: Invalid or expired refresh token
+
+  /auth/logout/:
+    post:
+      tags: [Authentication]
+      summary: Logout and blacklist refresh token
+      description: Invalidates the current refresh token by blacklisting it.
+      operationId: logoutUser
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Logout successful
+        "401":
+          description: Unauthenticated
+
+  /auth/forgot-password/:
+    post:
+      tags: [Authentication]
+      summary: Request password reset link
+      description: Sends a time-limited reset link (30 min) to the registered email.
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+      responses:
+        "200":
+          description: Reset link sent (always returns 200, even if email not found)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForgotPasswordResponse"
+
+  /auth/reset-password/:
+    post:
+      tags: [Authentication]
+      summary: Reset password with token
+      description: Validates the token from the reset link and updates the password.
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResetPasswordResponse"
+        "400":
+          description: Invalid or expired token
+
+  # ============================================================
+  #  USERS
+  # ============================================================
+  /users/me/:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      operationId: getMyProfile
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Profile data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Unauthenticated
+    put:
+      tags: [Users]
+      summary: Update current user profile
+      description: Updates profile fields. All fields are optional for partial update.
+      operationId: updateMyProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileUpdate"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+
+  /users/me/documents/:
+    get:
+      tags: [Users]
+      summary: List vault documents
+      description: Returns all documents in the applicant's document vault with status.
+      operationId: listVaultDocuments
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Vault document list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultDocumentListResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+    post:
+      tags: [Users]
+      summary: Upload vault document
+      description: Uploads national ID, passport, or TIN certificate to the applicant's document vault. Validates file type (JPEG/PNG/PDF), size (<5MB), and non-blank.
+      operationId: uploadVaultDocument
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, document_type]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                document_type:
+                  type: string
+                  enum: [NATIONAL_ID, TIN_CERTIFICATE]
+      responses:
+        "201":
+          description: Document uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultDocumentUploadResponse"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+
+  /users/:
+    get:
+      tags: [Users]
+      summary: List all users (Admin)
+      description: Returns paginated user list. Supports role and status filters.
+      operationId: listUsers
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+          description: Filter by role (APPLICANT, REVIEW_OFFICER, etc.)
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Filter by status (ACTIVE, INACTIVE)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                    nullable: true
+                  previous:
+                    type: string
+                    nullable: true
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AdminUserDetailResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+    post:
+      tags: [Users]
+      summary: Create officer account (Admin)
+      description: Creates a government officer account with auto-generated temporary password.
+      operationId: createOfficer
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserCreateRequest"
+      responses:
+        "201":
+          description: Officer created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserCreateResponse"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /users/{user_id}/:
+    get:
+      tags: [Users]
+      summary: Get user detail (Admin)
+      description: Returns full profile of any user.
+      operationId: getUserDetail
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserDetailResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+        "404":
+          description: User not found
+
+  /users/{user_id}/deactivate/:
+    put:
+      tags: [Users]
+      summary: Deactivate user account (Admin)
+      description: Sets user status to INACTIVE and is_active=False.
+      operationId: deactivateUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Account deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeactivateResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+        "404":
+          description: User not found
+
+  # ============================================================
+  #  APPLICATIONS
+  # ============================================================
+  /applications/:
+    get:
+      tags: [Applications]
+      summary: List applications
+      description: Returns applications filtered by role. APPLICANT sees own, REVIEW_OFFICER sees assigned, SENIOR_OFFICER and ADMIN see all.
+      operationId: listApplications
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Filter by application status (DRAFT, PAYMENT_PENDING, etc.)
+      responses:
+        "200":
+          description: Application list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApplicationListResponseItem"
+        "401":
+          description: Unauthenticated
+    post:
+      tags: [Applications]
+      summary: Create new application
+      description: Creates a DRAFT application with auto-generated ARN (ACPS-YYYY-XXXXXX) and auto-calculated fee.
+      operationId: createApplication
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationCreateRequest"
+      responses:
+        "201":
+          description: Application created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationCreateResponse"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+
+  /applications/{application_id}/:
+    get:
+      tags: [Applications]
+      summary: Get application detail
+      description: Returns full nested application detail with documents, neighbors, history, and timeline.
+      operationId: getApplicationDetail
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full application detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationDetailResponse"
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Application not found
+    put:
+      tags: [Applications]
+      summary: Update application (DRAFT or REVISION_REQUIRED only)
+      description: Updates application building fields. Re-triggers category and fee calculation. Allowed only in DRAFT or REVISION_REQUIRED status.
+      operationId: updateApplication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationUpdateRequest"
+      responses:
+        "200":
+          description: Application updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationUpdateResponse"
+        "400":
+          description: Cannot update in current status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/fee/:
+    get:
+      tags: [Applications]
+      summary: Get fee breakdown
+      description: Returns the calculated fee breakdown for the application (FORMULA, TIERED, or FALLBACK).
+      operationId: getApplicationFee
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Fee breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeBreakdownResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/documents/:
+    post:
+      tags: [Applications]
+      summary: Upload application document
+      description: Uploads a document for a DRAFT application. Validates PDF/DWG, <20MB, non-blank. Implements versioning.
+      operationId: uploadApplicationDocument
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document_type, file]
+              properties:
+                document_type:
+                  type: string
+                  enum: [ARCHITECTURAL, STRUCTURAL, SANITARY, ELECTRICAL, SOIL_TEST, PROFESSIONAL_LICENSE, FIRE_SAFETY]
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Document uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationDocumentUploadResponse"
+        "400":
+          description: Validation error or not DRAFT
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/documents/{document_id}/:
+    delete:
+      tags: [Applications]
+      summary: Delete application document
+      description: Removes a document from a DRAFT application.
+      operationId: deleteApplicationDocument
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Document deleted
+        "400":
+          description: Application not in DRAFT status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application or document not found
+
+  /applications/{application_id}/required-documents/:
+    get:
+      tags: [Applications]
+      summary: Get required documents checklist
+      description: Returns the dynamic checklist of required document types for the application based on its building category.
+      operationId: getRequiredDocuments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Required documents checklist
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequiredDocumentItem"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/submit/:
+    post:
+      tags: [Applications]
+      summary: Submit application for payment
+      description: Runs completeness check (all required docs present + accepted, ≥1 neighbor consent). On success transitions to PAYMENT_PENDING and generates invoice.
+      operationId: submitApplication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitResponse"
+        "400":
+          description: Completeness check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitErrorMissingDocs"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/neighbors/:
+    get:
+      tags: [Neighbors]
+      summary: List neighbor consents
+      description: Returns all neighbor records for the application.
+      operationId: listNeighbors
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Neighbor list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NeighborResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+    post:
+      tags: [Neighbors]
+      summary: Add neighbor consent
+      description: Adds a neighbor consent record with uploaded consent file to a DRAFT application.
+      operationId: addNeighbor
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/NeighborCreateRequest"
+      responses:
+        "201":
+          description: Neighbor consent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NeighborCreateResponse"
+        "400":
+          description: Validation error or not DRAFT
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/neighbors/{neighbor_id}/:
+    delete:
+      tags: [Neighbors]
+      summary: Delete neighbor consent
+      description: Removes a neighbor record from a DRAFT application.
+      operationId: deleteNeighbor
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: neighbor_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Neighbor deleted
+        "400":
+          description: Application not in DRAFT status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application or neighbor not found
+
+  /applications/{application_id}/timeline/:
+    get:
+      tags: [Applications]
+      summary: Get application timeline
+      description: Returns the full status change history of the application with timestamps and actor names.
+      operationId: getApplicationTimeline
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Timeline history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelineItem"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  # ============================================================
+  #  REVIEWS
+  # ============================================================
+  /applications/{application_id}/assign-reviewer/:
+    post:
+      tags: [Reviews]
+      summary: Assign reviewer to application
+      description: Assigns a review officer using round-robin (weighted by active review count) or explicit officer_id.
+      operationId: assignReviewer
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignReviewerRequest"
+      responses:
+        "200":
+          description: Reviewer assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignReviewerResponse"
+        "400":
+          description: Invalid status or no reviewer available
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+        "404":
+          description: Application not found
+
+  /reviews/my-queue/:
+    get:
+      tags: [Reviews]
+      summary: Get my review queue
+      description: Returns applications assigned to the calling REVIEW_OFFICER sorted by SLA urgency.
+      operationId: getMyReviewQueue
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Review queue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReviewQueueItem"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not REVIEW_OFFICER)
+
+  /reviews/workspace/{application_id}/:
+    get:
+      tags: [Reviews]
+      summary: Get review workspace
+      description: Returns full application detail with documents, form data, neighbors, and comment panel for the assigned reviewer.
+      operationId: getReviewWorkspace
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Review workspace data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationDetailResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not REVIEW_OFFICER)
+        "404":
+          description: Application not found or not assigned to you
+
+  /applications/{application_id}/comments/:
+    get:
+      tags: [Reviews]
+      summary: List review comments
+      description: Returns all comments for an application with author, category, timestamp, and resolution status.
+      operationId: listComments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Comment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommentResponse"
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Application not found
+    post:
+      tags: [Reviews]
+      summary: Create review comment
+      description: Adds a comment to an application. If not already REVISION_REQUIRED, transitions status and notifies applicant. Tracks revision cycles (>3 notifies senior).
+      operationId: createComment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentCreateRequest"
+      responses:
+        "201":
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not REVIEW_OFFICER)
+        "404":
+          description: Application not found or not assigned to you
+
+  /applications/{application_id}/comments/{comment_id}/resolve/:
+    put:
+      tags: [Reviews]
+      summary: Resolve or escalate a comment
+      description: Marks a comment as RESOLVED or ESCALATED.
+      operationId: resolveComment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: comment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentResolveRequest"
+      responses:
+        "200":
+          description: Comment resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+        "400":
+          description: Invalid resolution_status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not REVIEW_OFFICER)
+        "404":
+          description: Comment or application not found
+
+  /applications/{application_id}/review-decision/:
+    post:
+      tags: [Reviews]
+      summary: Submit review decision
+      description: APPROVED advances to AWAITING_SENIOR_APPROVAL. REJECTED requires ≥100 char notes + regulation citation, sets status to REJECTED.
+      operationId: submitReviewDecision
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecisionRequest"
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewDecisionResponse"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not REVIEW_OFFICER)
+        "404":
+          description: Application not found or not assigned to you
+
+  /reviews/sla-status/:
+    get:
+      tags: [Reviews]
+      summary: Get SLA status overview
+      description: Returns SLA configurations and all active reviews with days elapsed/remaining and breach status.
+      operationId: getSLAStatus
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: SLA status overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SLAStatusResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER or ADMIN)
+
+  # ============================================================
+  #  PAYMENTS
+  # ============================================================
+  /payments/invoices/{invoice_id}/:
+    get:
+      tags: [Payments]
+      summary: Get invoice detail
+      description: Returns invoice details with fee breakdown and available payment methods.
+      operationId: getInvoiceDetail
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invoice detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDetailResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Invoice not found
+
+  /payments/invoices/{invoice_id}/pay/:
+    post:
+      tags: [Payments]
+      summary: Initiate payment
+      description: |
+        For TELEBIRR and CBEBIRR: simulates 3-second processing, auto-confirms, generates receipt PDF, emails receipt, transitions application to AWAITING_ASSIGNMENT.
+        For BANK_TRANSFER: returns bank account details, sets status to AWAITING_MANUAL_CONFIRMATION.
+      operationId: initiatePayment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoicePayRequest"
+      responses:
+        "200":
+          description: Payment processed
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/InvoicePayResponseDigital"
+                  - $ref: "#/components/schemas/InvoicePayResponseBankTransfer"
+        "400":
+          description: Invalid method or payment already processed
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Invoice not found
+
+  /payments/invoices/{invoice_id}/bank-receipt/:
+    post:
+      tags: [Payments]
+      summary: Upload bank transfer receipt
+      description: Uploads a bank transfer receipt photo for AWAITING_MANUAL_CONFIRMATION payments.
+      operationId: uploadBankReceipt
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [receipt]
+              properties:
+                receipt:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Receipt uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankReceiptUploadResponse"
+        "400":
+          description: Invalid status or file validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Invoice not found
+
+  /payments/invoices/{invoice_id}/confirm/:
+    put:
+      tags: [Payments]
+      summary: Confirm bank transfer payment (Admin)
+      description: Manually confirms a bank transfer payment, generates receipt, updates application status to AWAITING_ASSIGNMENT.
+      operationId: confirmPayment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceConfirmResponse"
+        "400":
+          description: Cannot confirm in current status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+        "404":
+          description: Invoice not found
+
+  /payments/receipts/{receipt_id}/:
+    get:
+      tags: [Payments]
+      summary: Download payment receipt PDF
+      description: Returns the payment receipt PDF file.
+      operationId: downloadReceipt
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: receipt_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Receipt PDF file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Receipt not found
+
+  /payments/:
+    get:
+      tags: [Payments]
+      summary: List all payments (Admin)
+      description: Returns paginated payment records with optional filters.
+      operationId: listPayments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Filter by status
+        - name: method
+          in: query
+          schema:
+            type: string
+          description: Filter by payment method
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated payment list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentListResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /payments/expire/:
+    post:
+      tags: [Payments]
+      summary: Expire overdue payments (Cron)
+      description: Marks payments older than 7 days (PENDING or AWAITING_MANUAL_CONFIRMATION) as EXPIRED and sets application status to PAYMENT_EXPIRED.
+      operationId: expireOverduePayments
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Expiry processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentExpiryResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  # ============================================================
+  #  APPROVALS / PERMITS
+  # ============================================================
+  /approvals/queue/:
+    get:
+      tags: [Approvals]
+      summary: Get approvals queue
+      description: Returns applications in AWAITING_SENIOR_APPROVAL status with reviewer recommendation summary.
+      operationId: getApprovalsQueue
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Approvals queue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalsQueueItem"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER)
+
+  /approvals/{application_id}/:
+    get:
+      tags: [Approvals]
+      summary: Get approval detail
+      description: Returns complete application with all documents, comments, and history for senior officer review.
+      operationId: getApprovalDetail
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full approval detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDetailResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/issue-consent/:
+    post:
+      tags: [Approvals]
+      summary: Issue planning consent
+      description: Generates Planning Consent PDF with QR code and officer signature, stores in vault, emails applicant, transitions to CONSENT_ISSUED.
+      operationId: issueConsent
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Planning consent issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueConsentResponse"
+        "400":
+          description: Cannot issue consent in current status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/issue-permit/:
+    post:
+      tags: [Approvals]
+      summary: Issue construction permit
+      description: Generates Construction Permit PDF with QR code and officer signature, stores in vault, emails applicant, transitions to PERMIT_ISSUED.
+      operationId: issuePermit
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Construction permit issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuePermitResponse"
+        "400":
+          description: Cannot issue permit in current status or contractor not set
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/issue-completion-certificate/:
+    post:
+      tags: [Approvals]
+      summary: Issue completion certificate
+      description: Generates Completion Certificate PDF with QR code and signature, transitions to COMPLETED, archives permit.
+      operationId: issueCompletionCertificate
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Completion certificate issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueCompletionCertificateResponse"
+        "400":
+          description: Cannot issue certificate or final inspection not passed
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/reject-final/:
+    post:
+      tags: [Approvals]
+      summary: Reject application at final stage
+      description: Senior officer rejects the application with a reason (≥100 chars) and regulation citation.
+      operationId: rejectFinal
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeniorRejectRequest"
+      responses:
+        "200":
+          description: Application rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeniorRejectResponse"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER)
+        "404":
+          description: Application not found
+
+  /approvals/completion-review/{application_id}/:
+    get:
+      tags: [Approvals]
+      summary: Get completion review data
+      description: Returns building specs, approved plans, completion photos, and final inspection results for senior officer review before issuing completion certificate.
+      operationId: getCompletionReview
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Completion review data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionReviewResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not SENIOR_OFFICER)
+        "404":
+          description: Application not found
+
+  /permits/{permit_number}/:
+    get:
+      tags: [Permits]
+      summary: Get permit details
+      description: |
+        Returns permit details.
+        Unauthenticated callers see only: validity status, issue date, expiry date, building address.
+        Authenticated callers see full permit details.
+      operationId: getPermitDetail
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: permit_number
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Permit details
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/PublicPermitResponse"
+                  - $ref: "#/components/schemas/AuthenticatedPermitResponse"
+        "404":
+          description: Permit not found
+
+  /verify/{permit_number}/:
+    get:
+      tags: [Permits]
+      summary: Public permit verification page
+      description: Returns an HTML page showing permit validity status, issue date, and expiry date. No login required. Intended for QR code resolution.
+      operationId: verifyPermit
+      parameters:
+        - name: permit_number
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: HTML verification page
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Permit not found
+
+  # ============================================================
+  #  INSPECTIONS
+  # ============================================================
+  /applications/{application_id}/commence/:
+    post:
+      tags: [Inspections]
+      summary: Commence construction
+      description: Submits commencement notification. Transitions to UNDER_CONSTRUCTION and auto-schedules inspection milestones per building category.
+      operationId: commenceConstruction
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommenceRequest"
+      responses:
+        "200":
+          description: Construction commenced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommenceResponse"
+        "400":
+          description: Validation error or wrong status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/declare-completion/:
+    post:
+      tags: [Inspections]
+      summary: Declare construction completion
+      description: Submits completion declaration with ≥5 photos. Schedules Final Completion Inspection within 7 working days. Transitions to COMPLETION_DECLARED.
+      operationId: declareCompletion
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [completion_date, photos]
+              properties:
+                completion_date:
+                  type: string
+                  format: date
+                photos:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: Minimum 5 photos of completed structure from at least 4 angles
+      responses:
+        "200":
+          description: Completion declared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeclareCompletionResponse"
+        "400":
+          description: Validation error or wrong status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/inspections/:
+    get:
+      tags: [Inspections]
+      summary: List application inspections
+      description: Returns all inspection records for the application with type, scheduled date, assigned inspector, and outcome.
+      operationId: listApplicationInspections
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Inspection list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InspectionResponse"
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Application not found
+
+  /applications/{application_id}/inspections/{inspection_id}/request-reinspection/:
+    post:
+      tags: [Inspections]
+      summary: Request re-inspection
+      description: Applicant requests a re-inspection after a failed inspection by describing corrections made. Schedules new re-inspection.
+      operationId: requestReinspection
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: inspection_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReinspectionRequest"
+      responses:
+        "201":
+          description: Re-inspection scheduled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReinspectionResponse"
+        "400":
+          description: Validation error or inspection not failed
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not APPLICANT)
+        "404":
+          description: Application or inspection not found
+
+  /inspections/my-schedule/:
+    get:
+      tags: [Inspections]
+      summary: Get inspector schedule
+      description: Returns upcoming assigned inspections sorted by date with site details and GPS coordinates.
+      operationId: getInspectorSchedule
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Inspector schedule
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InspectorScheduleItem"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not INSPECTOR)
+
+  /inspections/{inspection_id}/:
+    get:
+      tags: [Inspections]
+      summary: Get inspection detail
+      description: Returns full inspection detail with checklist items and photos. Auto-populates checklist from templates if not yet created.
+      operationId: getInspectionDetail
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: inspection_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Inspection detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectionResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not INSPECTOR)
+        "404":
+          description: Inspection not found
+
+  /inspections/{inspection_id}/start/:
+    post:
+      tags: [Inspections]
+      summary: Start inspection
+      description: Records start timestamp and sets inspection status to IN_PROGRESS.
+      operationId: startInspection
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: inspection_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Inspection started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectionStartResponse"
+        "400":
+          description: Cannot start inspection in current status
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not INSPECTOR)
+        "404":
+          description: Inspection not found
+
+  /inspections/{inspection_id}/checklist/:
+    put:
+      tags: [Inspections]
+      summary: Update inspection checklist
+      description: Updates checklist items (pass/fail/NA and notes). Can be called multiple times before submission.
+      operationId: updateChecklist
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: inspection_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistUpdateRequest"
+      responses:
+        "200":
+          description: Checklist updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistUpdateResponse"
+        "400":
+          description: Cannot update checklist or invalid data
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not INSPECTOR)
+        "404":
+          description: Inspection not found
+
+  /inspections/{inspection_id}/photos/:
+    post:
+      tags: [Inspections]
+      summary: Upload inspection photos
+      description: Uploads inspection photos (JPEG/PNG, ≤10MB each). Minimum 3 photos required before submission. Each photo auto-timestamped.
+      operationId: uploadInspectionPhotos
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: inspection_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "201":
+          description: Photos uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  photos:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InspectionPhoto"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not INSPECTOR)
+        "404":
+          description: Inspection not found
+
+  /inspections/{inspection_id}/submit/:
+    post:
+      tags: [Inspections]
+      summary: Submit inspection results
+      description: Submits inspection with overall result (PASSED/FAILED). Locks record from further edits. FAILED requires ≥50 char failure summary. On PASSED activates next milestone; on final completion PASSED notifies senior officer.
+      operationId: submitInspection
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: inspection_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InspectionSubmitRequest"
+      responses:
+        "200":
+          description: Inspection submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectionSubmitResponse"
+        "400":
+          description: Validation error or <3 photos
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not INSPECTOR)
+        "404":
+          description: Inspection not found
+
+  # ============================================================
+  #  NOTIFICATIONS
+  # ============================================================
+  /notifications/:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      description: Returns the calling user's notifications sorted newest first. Supports unread_only filter.
+      operationId: listNotifications
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: unread_only
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Filter to only unread notifications
+      responses:
+        "200":
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+        "401":
+          description: Unauthenticated
+
+  /notifications/{notification_id}/read/:
+    put:
+      tags: [Notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationReadResponse"
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Notification not found
+
+  /notifications/read-all/:
+    put:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      operationId: markAllNotificationsRead
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: All marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationReadAllResponse"
+        "401":
+          description: Unauthenticated
+
+  # ============================================================
+  #  ADMINISTRATION
+  # ============================================================
+  /admin/stats/:
+    get:
+      tags: [Administration]
+      summary: Get system statistics
+      description: Returns system-wide statistics including applications by status, average processing days, SLA breaches, and payment volume.
+      operationId: getAdminStats
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStatsResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /admin/audit-log/:
+    get:
+      tags: [Administration]
+      summary: Get audit log
+      description: Returns paginated application history with optional filters for user_id, action_type, and date range.
+      operationId: getAuditLog
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          description: Filter by actor user ID
+        - name: action_type
+          in: query
+          schema:
+            type: string
+          description: Filter by new_status (action type)
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Start date filter
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: End date filter
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /admin/config/fee-schedule/:
+    get:
+      tags: [Administration]
+      summary: Get fee schedule
+      description: Returns all fee schedule tiers.
+      operationId: getFeeSchedule
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Fee schedule tiers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeScheduleResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+    put:
+      tags: [Administration]
+      summary: Update fee schedule
+      description: Replaces all fee schedule tiers with the provided list.
+      operationId: updateFeeSchedule
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeeScheduleUpdateRequest"
+      responses:
+        "200":
+          description: Fee schedule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigUpdateResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /admin/config/sla-thresholds/:
+    get:
+      tags: [Administration]
+      summary: Get SLA thresholds
+      description: Returns all SLA configurations per stage.
+      operationId: getSLAConfigs
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: SLA configurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SLAConfigResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+    put:
+      tags: [Administration]
+      summary: Update SLA thresholds
+      description: Replaces all SLA configurations with the provided list.
+      operationId: updateSLAConfigs
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SLAConfigUpdateRequest"
+      responses:
+        "200":
+          description: SLA configs updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigUpdateResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /admin/config/inspection-checklists/{inspection_type}/:
+    get:
+      tags: [Administration]
+      summary: Get inspection checklists
+      description: Returns all active checklist items for the given inspection type.
+      operationId: getChecklistTemplates
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: inspection_type
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Checklist templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplateResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+    put:
+      tags: [Administration]
+      summary: Update inspection checklists
+      description: Replaces all active checklist items for the given inspection type.
+      operationId: updateChecklistTemplates
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: inspection_type
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistTemplateUpdateRequest"
+      responses:
+        "200":
+          description: Checklist updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigUpdateResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /admin/config/notification-templates/:
+    get:
+      tags: [Administration]
+      summary: Get notification templates
+      description: Returns all notification templates (from DB + defaults).
+      operationId: getNotificationTemplates
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Notification templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationTemplateItem"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+    post:
+      tags: [Administration]
+      summary: Create or update notification template
+      description: Creates or updates an email notification template.
+      operationId: upsertNotificationTemplate
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationTemplateUpsertRequest"
+      responses:
+        "200":
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationTemplateUpsertResponse"
+        "400":
+          description: Missing required fields
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /admin/reports/export/:
+    get:
+      tags: [Administration]
+      summary: Export report as CSV
+      description: Generates a downloadable CSV report for applications, payments, or inspections with optional date filtering.
+      operationId: exportReport
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: report_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [applications, payments, inspections]
+          description: Type of report
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Start date filter
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: End date filter
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid report_type
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+
+  /admin/signatures/{user_id}/:
+    get:
+      tags: [Administration]
+      summary: Get officer signature
+      description: Returns the signature image URL for the specified officer.
+      operationId: getSignature
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Signature data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignatureResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+        "404":
+          description: Signature or officer not found
+    post:
+      tags: [Administration]
+      summary: Upload officer signature
+      description: Uploads or updates an officer's signature PNG for PDF generation. Max 2MB, PNG only.
+      operationId: uploadSignature
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [signature]
+              properties:
+                signature:
+                  type: string
+                  format: binary
+                  description: PNG image, max 2MB
+      responses:
+        "200":
+          description: Signature uploaded or updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignatureUploadResponse"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden (not ADMIN)
+        "404":
+          description: Officer not found
