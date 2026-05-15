@@ -1,0 +1,16 @@
+=== REVERT INSTRUCTIONS ===
+
+If the merged PDF download endpoints break the deployment:
+
+Option A — Safe revert (adds a revert commit, preserves history):
+  git revert 076461b
+  git push origin dev
+
+Option B — Hard revert (removes the 2 commits entirely):
+  git checkout dev
+  git reset --hard HEAD~2
+  git push --force-with-lease origin dev
+
+Commits being reverted:
+  076461b Add ApplicationDocumentDownloadView for reviewer document access
+  6fd6c11 Add PermitDownloadView for direct PDF file serving
