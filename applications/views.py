@@ -1,8 +1,10 @@
 import datetime
 from decimal import Decimal
 from django.db import transaction
+from django.http import FileResponse
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -334,6 +336,52 @@ class ApplicationDocumentDeleteView(APIView):
             )
         doc.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ApplicationDocumentDownloadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, application_id, document_id):
+        try:
+            app = Application.objects.get(pk=application_id)
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": "Application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        role = getattr(request.user, "role", None)
+        is_owner = request.user == app.applicant
+        is_assigned = request.user == app.assigned_officer
+        is_staff = role in ("SENIOR_OFFICER", "ADMIN", "INSPECTOR")
+
+        if not (is_owner or is_assigned or is_staff):
+            return Response(
+                {"detail": "You do not have permission to download this document."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            doc = Document.objects.get(pk=document_id, application=app)
+        except Document.DoesNotExist:
+            return Response(
+                {"detail": "Document not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not doc.file_path:
+            return Response(
+                {"detail": "No file available for this document."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        content_type = doc.mime_type or "application/octet-stream"
+        return FileResponse(
+            doc.file_path.open("rb"),
+            content_type=content_type,
+            filename=doc.file_name,
+        )
 
 
 class ApplicationNeighborView(APIView):

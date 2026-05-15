@@ -5,6 +5,7 @@ from .views import (
     ApplicationUpdateView,
     ApplicationDocumentUploadView,
     ApplicationDocumentDeleteView,
+    ApplicationDocumentDownloadView,
     ApplicationNeighborView,
     ApplicationNeighborDeleteView,
     ApplicationRequiredDocumentsView,
@@ -53,6 +54,11 @@ urlpatterns = [
         "applications/<uuid:application_id>/documents/<uuid:document_id>/",
         ApplicationDocumentDeleteView.as_view(),
         name="application-document-delete",
+    ),
+    path(
+        "applications/<uuid:application_id>/documents/<uuid:document_id>/download/",
+        ApplicationDocumentDownloadView.as_view(),
+        name="application-document-download",
     ),
     path(
         "applications/<uuid:application_id>/timeline/",

@@ -1,0 +1,25 @@
+=== FILE DOWNLOAD ENDPOINTS ===
+
+1. Permit PDF Download
+   GET /api/v1/permits/{permit_number}/download/
+   Auth: Any authenticated user
+   Returns: application/pdf
+   View: PermitDownloadView (permits/views.py)
+
+2. Payment Receipt Download
+   GET /api/v1/payments/receipts/{receipt_id}/
+   Auth: Any authenticated user
+   Returns: application/pdf
+   View: ReceiptDownloadView (payments/views.py)
+
+3. Application Document Download
+   GET /api/v1/applications/{application_id}/documents/{document_id}/download/
+   Auth: Applicant (owner), Review Officer (assigned), Senior Officer, Inspector, Admin
+   Returns: File (PDF/DWG — original uploaded content type)
+   View: ApplicationDocumentDownloadView (applications/views.py)
+
+4. Admin Reports Export
+   GET /api/v1/admin/reports/export/?report_type={type}&date_from={from}&date_to={to}
+   Auth: Admin only
+   Returns: text/csv
+   View: ReportsExportView (admin_config/views.py)
