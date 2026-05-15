@@ -22,6 +22,14 @@ class ApplicationListSerializer(serializers.ModelSerializer):
         data["calculated_fee"] = (
             float(instance.calculated_fee) if instance.calculated_fee else None
         )
+        data["assigned_officer"] = (
+            {
+                "id": str(instance.assigned_officer.id),
+                "full_name": instance.assigned_officer.full_name,
+            }
+            if instance.assigned_officer
+            else None
+        )
         return data
 
 

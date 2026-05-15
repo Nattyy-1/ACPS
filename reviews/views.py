@@ -95,15 +95,8 @@ class AssignReviewerView(APIView):
                 )
 
         with transaction.atomic():
-            ApplicationHistory.objects.create(
-                application=app,
-                previous_status=app.status,
-                new_status=Application.Status.AWAITING_ASSIGNMENT,
-                actor=request.user,
-                note=f"Assigned to reviewer {officer.full_name}.",
-            )
             app.assigned_officer = officer
-            app.save(update_fields=["assigned_officer"])
+            app.save(update_fields=["assigned_officer", "updated_at"])
 
         Notification.objects.create(
             recipient=officer,

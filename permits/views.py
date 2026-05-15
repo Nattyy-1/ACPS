@@ -589,6 +589,23 @@ class IssueCompletionCertificateView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class ApplicationPermitsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, application_id):
+        app = get_object_or_404(Application, pk=application_id)
+        if not (request.user == app.applicant or request.user.is_staff or
+                getattr(request.user, "role", None) in ("SENIOR_OFFICER", "ADMIN")):
+            return Response(
+                {"detail": "You do not have permission to view permits for this application."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        permits = app.permits.all().order_by("-created_at")
+        serializer = AuthenticatedPermitSerializer(permits, many=True)
+        return Response(serializer.data)
+
+
 class PermitDetailView(APIView):
     authentication_classes = [JWTAuthentication]
 

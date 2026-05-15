@@ -33,6 +33,11 @@ urlpatterns = [
         name="issue-completion-certificate",
     ),
     path(
+        "applications/<uuid:application_id>/permits/",
+        views.ApplicationPermitsView.as_view(),
+        name="application-permits",
+    ),
+    path(
         "applications/<uuid:application_id>/reject-final/",
         views.SeniorRejectView.as_view(),
         name="reject-final",
