@@ -48,6 +48,11 @@ urlpatterns = [
         name="permit-detail",
     ),
     path(
+        "permits/<str:permit_number>/download/",
+        views.PermitDownloadView.as_view(),
+        name="permit-download",
+    ),
+    path(
         "verify/<str:permit_number>/",
         views.permit_verify_view,
         name="permit-verify",

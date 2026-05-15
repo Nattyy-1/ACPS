@@ -3,6 +3,7 @@ import io
 
 from django.core.mail import send_mail
 from django.db import transaction
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from rest_framework import status
@@ -619,6 +620,24 @@ class PermitDetailView(APIView):
         else:
             serializer = PublicPermitSerializer(permit)
         return Response(serializer.data)
+
+
+class PermitDownloadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, permit_number):
+        permit = get_object_or_404(Permit, permit_number=permit_number)
+        if not permit.document_path:
+            return Response(
+                {"detail": "No document file available for this permit."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return FileResponse(
+            permit.document_path.open("rb"),
+            content_type="application/pdf",
+            filename=f"{permit.permit_number}.pdf",
+        )
 
 
 def permit_verify_view(request, permit_number):
